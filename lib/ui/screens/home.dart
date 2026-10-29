@@ -151,8 +151,15 @@ class _QuickTile extends StatelessWidget {
               child: Row(
                 children: <Widget>[
                   Lead(icon),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(title, style: OmText.title.copyWith(color: c.ink))),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    // One line; shrinks a little rather than splitting a long word.
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(title, maxLines: 1, style: OmText.title.copyWith(color: c.ink)),
+                    ),
+                  ),
                 ],
               ),
             ),

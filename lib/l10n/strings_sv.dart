@@ -162,7 +162,7 @@ const Map<String, String> stringsSv = <String, String>{
   'pdf_subject': 'Sammanfattning av graviditeten',
   'phone_ph': 'Telefonnummer',
   'remove_number': 'Ta bort numret',
-  'role_centre': 'Barnmorskemottagning',
+  'role_centre': 'Barnmorske\u200bmottagning',
   'role_doctor': 'Läkare',
   'role_emergency': 'Nödnummer',
   'role_midwife': 'Barnmorska',

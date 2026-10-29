@@ -162,7 +162,7 @@ const Map<String, String> stringsDa = <String, String>{
   'pdf_subject': 'Oversigt over graviditeten',
   'phone_ph': 'Telefonnummer',
   'remove_number': 'Fjern nummeret',
-  'role_centre': 'Jordemoderkonsultation',
+  'role_centre': 'Jordemoder\u200bkonsultation',
   'role_doctor': 'Læge',
   'role_emergency': 'Alarmnummer',
   'role_midwife': 'Jordemoder',
