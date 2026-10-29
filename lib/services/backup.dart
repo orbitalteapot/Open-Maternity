@@ -54,24 +54,20 @@ String backupFileName(DateTime now) => 'open-maternity-backup-${isoDate(now)}.js
 /// Lets the user choose where to save the backup. Returns false if cancelled.
 Future<bool> saveBackup(AppData data, DateTime now) async {
   final Uint8List bytes = Uint8List.fromList(utf8.encode(encodeBackup(data, now)));
-  final String? path = await FilePicker.saveFile(
+  final Uri? saved = await FilePicker.saveFile(
     fileName: backupFileName(now),
     bytes: bytes,
-    type: FileType.custom,
-    allowedExtensions: <String>['json'],
+    mimeType: 'application/json',
   );
-  return path != null;
+  return saved != null;
 }
 
 /// Lets the user pick a backup file. Returns its text, or null if cancelled.
 Future<String?> pickBackupText() async {
-  final FilePickerResult? result = await FilePicker.pickFiles(withData: true);
-  if (result == null || result.files.isEmpty) {
+  final PlatformFile? file = await FilePicker.pickFile();
+  if (file == null) {
     return null;
   }
-  final Uint8List? bytes = result.files.first.bytes;
-  if (bytes == null) {
-    return null;
-  }
+  final Uint8List bytes = await file.readAsBytes();
   return utf8.decode(bytes, allowMalformed: true);
 }

@@ -129,6 +129,7 @@ class CallButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final OmColors c = context.om;
     return Semantics(
+      container: true,
       button: true,
       label: label,
       excludeSemantics: true,
@@ -422,7 +423,7 @@ class Notice extends StatelessWidget {
               children: <Widget>[
                 if (title != null) Text(title!, style: OmText.title.copyWith(color: fg)),
                 if (body != null) Text(body!, style: OmText.body.copyWith(color: fg)),
-                if (action != null) action!,
+                ?action,
               ],
             ),
           ),
@@ -587,6 +588,7 @@ class TimerButton extends StatelessWidget {
     final Color fg = running ? c.onClay : c.clay;
     final Color ring = running ? c.claySoft : c.surfaceSunken;
     return Semantics(
+      container: true,
       button: true,
       label: semanticLabel,
       excludeSemantics: true,
@@ -779,6 +781,7 @@ class TapField extends StatelessWidget {
       children: <Widget>[
         ExcludeSemantics(child: Text(label, style: OmText.label.copyWith(color: c.ink))),
         Semantics(
+          container: true,
           button: true,
           label: label,
           value: shown,
@@ -884,8 +887,10 @@ class PageBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Leaves room for the phone's gesture bar on screens without a bottom bar.
+    final double bottomInset = MediaQuery.paddingOf(context).bottom;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 24 + bottomInset),
       children: <Widget>[
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, spacing: spacing, children: children),
       ],

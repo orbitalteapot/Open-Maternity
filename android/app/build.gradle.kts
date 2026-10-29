@@ -27,7 +27,6 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         // PLACEHOLDER store ID: change before the first Google Play upload (it can never change later).
         applicationId = "no.openmaternity.app"
         // You can update the following values to match your application needs.
@@ -55,8 +54,7 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Store builds are signed with the upload key; other builds fall back to the debug key.
             signingConfig = if (keystorePropertiesFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
