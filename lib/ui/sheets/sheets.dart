@@ -1,4 +1,6 @@
 // Bottom sheets for adding and editing entries.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -8,6 +10,7 @@ import '../../data/store.dart';
 import '../../l10n/format.dart';
 import '../../l10n/strings.dart';
 import '../../services/backup.dart';
+import '../../services/summary_pdf.dart';
 import '../../theme/tokens.dart';
 import '../actions.dart';
 import '../scope.dart';
@@ -538,13 +541,28 @@ class _ContractionSheetState extends State<_ContractionSheet> {
     if (tod == null || !mounted) {
       return;
     }
-    // Times are on the day the contraction started.
-    final DateTime base = DateTime.fromMillisecondsSinceEpoch(widget.contraction.start);
-    final DateTime next = DateTime(base.year, base.month, base.day, tod.hour, tod.minute, isStart ? base.second : _end.second);
     setState(() {
       if (isStart) {
+        // The day nearest the old time, so 00:01 -> 23:59 stays the evening before.
+        DateTime next = nearestClockTime(_start, tod.hour, tod.minute, second: _start.second);
+        if (next.isAfter(DateTime.now())) {
+          next = next.subtract(const Duration(days: 1));
+        }
+        final Duration length = _end.difference(_start);
         _start = next;
+        _end = next.add(length);
       } else {
+        DateTime next = nearestClockTime(_end, tod.hour, tod.minute, second: _end.second);
+        while (!next.isAfter(_start)) {
+          next = next.add(const Duration(days: 1));
+        }
+        if (next.difference(_start) > const Duration(hours: 1)) {
+          // A contraction never lasts an hour; the time was meant for the same minute range.
+          next = nearestClockTime(_start, tod.hour, tod.minute, second: _end.second);
+          if (!next.isAfter(_start)) {
+            next = _start.add(const Duration(seconds: 1));
+          }
+        }
         _end = next;
       }
     });
@@ -583,6 +601,100 @@ class _ContractionSheetState extends State<_ContractionSheet> {
   }
 }
 
+// ------------------------------------------------------------------ movement sessions
+
+Future<void> showMoveSheet(BuildContext context, MoveSession session) {
+  final S t = context.tRead;
+  return showOmSheet<void>(context, title: t('m_edit'), builder: (_) => _MoveSheet(session: session));
+}
+
+class _MoveSheet extends StatefulWidget {
+  const _MoveSheet({required this.session});
+  final MoveSession session;
+
+  @override
+  State<_MoveSheet> createState() => _MoveSheetState();
+}
+
+class _MoveSheetState extends State<_MoveSheet> {
+  late DateTime _start;
+  late DateTime _end;
+  late int _count;
+
+  @override
+  void initState() {
+    super.initState();
+    _start = DateTime.fromMillisecondsSinceEpoch(widget.session.start);
+    _end = DateTime.fromMillisecondsSinceEpoch(widget.session.end);
+    _count = widget.session.count;
+  }
+
+  Future<void> _pick(bool isStart) async {
+    final TimeOfDay? tod = await pickTime(context, TimeOfDay.fromDateTime(isStart ? _start : _end));
+    if (tod == null || !mounted) {
+      return;
+    }
+    setState(() {
+      if (isStart) {
+        DateTime next = nearestClockTime(_start, tod.hour, tod.minute);
+        if (next.isAfter(DateTime.now())) {
+          next = next.subtract(const Duration(days: 1));
+        }
+        final Duration length = _end.difference(_start);
+        _start = next;
+        _end = next.add(length);
+      } else {
+        DateTime next = nearestClockTime(_end, tod.hour, tod.minute);
+        while (next.isBefore(_start)) {
+          next = next.add(const Duration(days: 1));
+        }
+        _end = next;
+      }
+    });
+  }
+
+  void _save() {
+    context.storeRead.updateMoveSession(
+      widget.session.id,
+      start: _start.millisecondsSinceEpoch,
+      end: _end.millisecondsSinceEpoch,
+      count: _count,
+    );
+    Navigator.of(context).pop();
+  }
+
+  void _delete() {
+    final AppStore store = context.storeRead;
+    final S t = store.t;
+    final VoidCallback undo = store.deleteMoveSession(widget.session.id);
+    Navigator.of(context).pop();
+    toastText(t('m_deleted'), undoLabel: t('undo'), undo: undo);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final S t = context.t;
+    final OmColors c = context.om;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 16,
+      children: <Widget>[
+        Text(t('m_count_l'), style: OmText.label.copyWith(color: c.ink)),
+        NumberStepper(
+          value: _count,
+          lessLabel: t('less'),
+          moreLabel: t('more'),
+          onChanged: (int v) => setState(() => _count = v),
+        ),
+        TapField(label: t('c_started_l'), value: clockOf(_start), placeholder: '', icon: Icons.schedule_rounded, onTap: () => _pick(true)),
+        TapField(label: t('c_ended_l'), value: clockOf(_end), placeholder: '', icon: Icons.schedule_rounded, onTap: () => _pick(false)),
+        OmButton(label: t('save'), onPressed: _save, expand: true),
+        OmButton(label: t('delete'), icon: Icons.delete_rounded, kind: BtnKind.outlined, onPressed: _delete, expand: true),
+      ],
+    );
+  }
+}
+
 // ------------------------------------------------------------------ delete and restore
 
 Future<void> showDeleteAllSheet(BuildContext context) {
@@ -604,8 +716,10 @@ Future<void> showDeleteAllSheet(BuildContext context) {
             expand: true,
             onPressed: () {
               final AppStore store = ctx.storeRead;
+              messengerKey.currentState?.clearSnackBars();
               Navigator.of(ctx).popUntil((Route<dynamic> r) => r.isFirst);
               store.deleteEverything();
+              unawaited(deleteSummaryFiles());
             },
           ),
           OmButton(label: t('cancel'), kind: BtnKind.quiet, onPressed: () => Navigator.of(ctx).pop()),
@@ -633,11 +747,16 @@ Future<void> showRestoreSheet(BuildContext context, BackupFile backup) {
             label: t('s_restore_go'),
             icon: Icons.settings_backup_restore_rounded,
             expand: true,
-            onPressed: () {
+            onPressed: () async {
               final AppStore store = ctx.storeRead;
+              messengerKey.currentState?.clearSnackBars();
               Navigator.of(ctx).pop();
               store.replaceAll(backup.data);
-              toastText(S(store.data.lang)('s_restore_done'));
+              final S restored = S(store.data.lang);
+              toastText(restored('s_restore_done'));
+              if (store.data.meds.isNotEmpty && !await store.reminders.requestPermission()) {
+                toastText(restored('md_perm_off'));
+              }
             },
           ),
           OmButton(label: t('cancel'), kind: BtnKind.quiet, onPressed: () => Navigator.of(ctx).pop()),

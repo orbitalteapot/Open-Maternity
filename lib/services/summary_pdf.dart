@@ -68,6 +68,7 @@ Future<Uint8List> buildSummaryPdf(AppData data, S t, DateTime now) async {
 
   // Contractions, last 24 hours
   final List<Contraction> sorted = sortedContractions(data.contractions);
+  final ContractionStats stats = contractionStats(sorted, nowMs);
   final List<List<String>> cRows = <List<String>>[];
   for (int i = 0; i < sorted.length; i++) {
     final Contraction c = sorted[i];
@@ -136,6 +137,17 @@ Future<Uint8List> buildSummaryPdf(AppData data, S t, DateTime now) async {
         pw.SizedBox(height: 8),
         ...intro,
         heading(t('pdf_c_title')),
+        if (stats.sample >= 2)
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(bottom: 6),
+            child: pw.Text(
+              '${t('c_avg', <String, Object?>{'n': stats.sample})}: '
+              '${formatDuration(stats.avgIntervalSec)} ${t('c_apart')} · '
+              '${formatDuration(stats.avgDurationSec)} ${t('c_lasting')} · '
+              '${f.oneDecimal(stats.per10Min)} ${t('c_per10')}',
+              style: body,
+            ),
+          ),
         table(<String>[t('pdf_col_start'), t('pdf_col_len'), t('pdf_col_gap')], cRows),
         heading(t('pdf_m_title')),
         table(<String>[t('a_date'), t('t_movements')], mRows),
@@ -160,6 +172,21 @@ String weeksAndDays(S t, PregnancyWeek w) {
     return t('weeks_1day', <String, Object?>{'w': w.week});
   }
   return t('weeks_days', <String, Object?>{'w': w.week, 'd': w.days});
+}
+
+/// Removes summaries left in the app's temporary folder (part of "Delete everything").
+Future<void> deleteSummaryFiles() async {
+  try {
+    final Directory dir = await getTemporaryDirectory();
+    for (final FileSystemEntity f in dir.listSync()) {
+      final String name = f.uri.pathSegments.isEmpty ? '' : f.uri.pathSegments.last;
+      if (f is File && name.startsWith('open-maternity-summary-') && name.endsWith('.pdf')) {
+        await f.delete();
+      }
+    }
+  } catch (_) {
+    // Nothing to clean up.
+  }
 }
 
 /// Writes the PDF to a temporary file and opens the phone's share menu.

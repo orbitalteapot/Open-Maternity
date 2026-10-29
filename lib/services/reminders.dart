@@ -9,6 +9,9 @@ abstract class Reminders {
   /// Asks the phone for permission to show notifications. Returns true if allowed.
   Future<bool> requestPermission();
 
+  /// Whether notifications are allowed right now, without asking.
+  Future<bool> isAllowed();
+
   /// Replaces all scheduled reminders with one daily reminder per medicine.
   Future<void> sync(List<Medicine> meds, S t);
 }
@@ -22,6 +25,9 @@ class NoReminders implements Reminders {
 
   @override
   Future<bool> requestPermission() async => true;
+
+  @override
+  Future<bool> isAllowed() async => true;
 
   @override
   Future<void> sync(List<Medicine> meds, S t) async {}

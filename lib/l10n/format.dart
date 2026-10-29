@@ -25,6 +25,9 @@ class Fmt {
   /// Thu 29 Oct / Tor. 29. okt.
   String weekdayShort(DateTime d) => _cap(DateFormat.MMMEd(_loc).format(d));
 
+  /// 3 Nov / 3. nov.
+  String dayMonthShort(DateTime d) => DateFormat.MMMd(_loc).format(d);
+
   /// 29 Oct 2026 / 29. okt. 2026
   String date(DateTime d) => DateFormat.yMMMd(_loc).format(d);
 
@@ -33,6 +36,9 @@ class Fmt {
 
   /// 72.9 / 72,9
   String kg(double v) => NumberFormat('0.0', _loc).format(v);
+
+  /// 1.9 / 1,9
+  String oneDecimal(double v) => NumberFormat('0.0', _loc).format(v);
 
   /// '+1,7' or '−0,4'
   String kgSigned(double v) => '${v >= 0 ? '+' : '−'}${kg(v.abs())}';

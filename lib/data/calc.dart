@@ -103,15 +103,35 @@ class ContractionStats {
   /// Average time from the start of one contraction to the start of the next; 0 if unknown.
   final double avgIntervalSec;
   final int inLastHour;
+
+  /// How many contractions come per 10 minutes at the average interval; 0 if unknown.
+  double get per10Min => avgIntervalSec > 0 ? 600 / avgIntervalSec : 0;
 }
 
 List<Contraction> sortedContractions(List<Contraction> list) {
   return List<Contraction>.of(list)..sort((Contraction a, Contraction b) => a.start.compareTo(b.start));
 }
 
+/// Contractions more than an hour apart belong to different runs (another day,
+/// false labour). Intervals across that gap are not shown or averaged.
+const int runGapMs = 60 * 60 * 1000;
+
+/// The latest run: the newest contractions with less than an hour between starts.
+List<Contraction> currentRun(List<Contraction> sorted) {
+  if (sorted.isEmpty) {
+    return const <Contraction>[];
+  }
+  int first = sorted.length - 1;
+  while (first > 0 && sorted[first].start - sorted[first - 1].start <= runGapMs) {
+    first--;
+  }
+  return sorted.sublist(first);
+}
+
 ContractionStats contractionStats(List<Contraction> list, int nowMs) {
   final List<Contraction> sorted = sortedContractions(list);
-  final List<Contraction> last = sorted.length > 6 ? sorted.sublist(sorted.length - 6) : sorted;
+  final List<Contraction> run = currentRun(sorted);
+  final List<Contraction> last = run.length > 6 ? run.sublist(run.length - 6) : run;
   double avgDur = 0;
   if (last.isNotEmpty) {
     avgDur = last.fold<int>(0, (int sum, Contraction c) => sum + c.durationMs) / last.length / 1000;
@@ -128,12 +148,34 @@ ContractionStats contractionStats(List<Contraction> list, int nowMs) {
   return ContractionStats(sample: last.length, avgDurationSec: avgDur, avgIntervalSec: avgGap, inLastHour: inHour);
 }
 
-/// Seconds since the previous contraction started, or null for the first one.
+/// Seconds since the previous contraction started, or null for the first one
+/// of a run (none before it, or more than an hour since the previous one).
 double? intervalBefore(List<Contraction> sorted, int index) {
   if (index <= 0 || index >= sorted.length) {
     return null;
   }
-  return (sorted[index].start - sorted[index - 1].start) / 1000;
+  final int gap = sorted[index].start - sorted[index - 1].start;
+  if (gap > runGapMs) {
+    return null;
+  }
+  return gap / 1000;
+}
+
+/// Puts a clock time picked by the user on the day (yesterday, same day or
+/// tomorrow, seen from [original]) that is closest to [original]. Keeps times
+/// near midnight on the right side of it.
+DateTime nearestClockTime(DateTime original, int hour, int minute, {int second = 0}) {
+  DateTime best = original;
+  int bestDiff = -1;
+  for (final int dayOffset in <int>[-1, 0, 1]) {
+    final DateTime candidate = DateTime(original.year, original.month, original.day + dayOffset, hour, minute, second);
+    final int diff = (candidate.millisecondsSinceEpoch - original.millisecondsSinceEpoch).abs();
+    if (bestDiff < 0 || diff < bestDiff) {
+      best = candidate;
+      bestDiff = diff;
+    }
+  }
+  return best;
 }
 
 /// Accepts '72,5' or '72.5'. Returns null when outside 30–300 kg.

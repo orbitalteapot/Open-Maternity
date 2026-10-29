@@ -7,6 +7,10 @@ abstract class StateStorage {
   Future<String?> read();
   Future<void> write(String json);
   Future<void> clear();
+
+  /// Keeps the current file under another name when it can't be read,
+  /// so starting fresh never destroys it.
+  Future<void> keepUnreadableCopy();
 }
 
 /// Stores the data in the app's private folder on the phone.
@@ -50,6 +54,14 @@ class FileStateStorage implements StateStorage {
       await f.delete();
     }
   }
+
+  @override
+  Future<void> keepUnreadableCopy() async {
+    final File f = await _target();
+    if (f.existsSync()) {
+      await f.copy('${f.path}.unreadable-${DateTime.now().millisecondsSinceEpoch}');
+    }
+  }
 }
 
 /// Keeps the data in memory only. Used by tests.
@@ -71,5 +83,12 @@ class MemoryStateStorage implements StateStorage {
   @override
   Future<void> clear() async {
     value = null;
+  }
+
+  int unreadableCopies = 0;
+
+  @override
+  Future<void> keepUnreadableCopy() async {
+    unreadableCopies++;
   }
 }

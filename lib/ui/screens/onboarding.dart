@@ -291,7 +291,7 @@ class _DueScreenState extends State<DueScreen> {
       context,
       initial: _due ?? today.add(const Duration(days: 140)),
       first: today.subtract(const Duration(days: 60)),
-      last: today.add(const Duration(days: 300)),
+      last: today.add(const Duration(days: 280)),
     );
     if (d != null && mounted) {
       setState(() => _due = d);

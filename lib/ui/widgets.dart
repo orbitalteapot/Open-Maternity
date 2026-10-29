@@ -118,12 +118,13 @@ class OmIconButton extends StatelessWidget {
   }
 }
 
-/// The outlined round call button used next to saved numbers.
-class CallButton extends StatelessWidget {
-  const CallButton({super.key, required this.label, required this.onPressed});
+/// An outlined round 48 px button with an icon, e.g. call or add next to a number.
+class RoundButton extends StatelessWidget {
+  const RoundButton({super.key, required this.icon, required this.label, required this.onPressed});
 
+  final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -131,6 +132,7 @@ class CallButton extends StatelessWidget {
     return Semantics(
       container: true,
       button: true,
+      enabled: onPressed != null,
       label: label,
       excludeSemantics: true,
       onTap: onPressed,
@@ -140,9 +142,61 @@ class CallButton extends StatelessWidget {
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onPressed,
-          child: SizedBox(width: 48, height: 48, child: Icon(Icons.call_rounded, color: c.clay)),
+          child: SizedBox(
+            width: 48,
+            height: 48,
+            child: Icon(icon, color: onPressed == null ? c.lineStrong : c.clay),
+          ),
         ),
       ),
+    );
+  }
+}
+
+/// The round call button used next to saved numbers.
+class CallButton extends StatelessWidget {
+  const CallButton({super.key, required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => RoundButton(icon: Icons.call_rounded, label: label, onPressed: onPressed);
+}
+
+/// − value + for whole numbers.
+class NumberStepper extends StatelessWidget {
+  const NumberStepper({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    required this.lessLabel,
+    required this.moreLabel,
+    this.min = 0,
+    this.max = 999,
+  });
+
+  final int value;
+  final ValueChanged<int> onChanged;
+  final String lessLabel;
+  final String moreLabel;
+  final int min;
+  final int max;
+
+  @override
+  Widget build(BuildContext context) {
+    final OmColors c = context.om;
+    return Row(
+      children: <Widget>[
+        RoundButton(icon: Icons.remove_rounded, label: lessLabel, onPressed: value > min ? () => onChanged(value - 1) : null),
+        Expanded(
+          child: Semantics(
+            liveRegion: true,
+            child: Text('$value', textAlign: TextAlign.center, style: OmText.numeralLg.copyWith(color: c.ink)),
+          ),
+        ),
+        RoundButton(icon: Icons.add_rounded, label: moreLabel, onPressed: value < max ? () => onChanged(value + 1) : null),
+      ],
     );
   }
 }
@@ -328,8 +382,11 @@ class OmRow extends StatelessWidget {
     this.onTap,
     this.minHeight = 64,
     this.titleStyle,
+    this.singleLineTitle = false,
   });
 
+  /// Keeps the title on one line, shrinking it slightly if needed (names in lists).
+  final bool singleLineTitle;
   final String title;
   final Widget? leading;
   final String? subtitle;
@@ -353,7 +410,14 @@ class OmRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Text(title, style: titleStyle ?? OmText.title.copyWith(color: c.ink)),
+                  if (singleLineTitle)
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerStart,
+                      child: Text(title, maxLines: 1, style: titleStyle ?? OmText.title.copyWith(color: c.ink)),
+                    )
+                  else
+                    Text(title, style: titleStyle ?? OmText.title.copyWith(color: c.ink)),
                   if (subtitle != null && subtitle!.isNotEmpty)
                     Text(subtitle!, style: OmText.caption.copyWith(color: c.inkMuted)),
                 ],
@@ -518,7 +582,11 @@ class StatBox extends StatelessWidget {
               ),
             ),
           ),
-          Text(label, style: OmText.caption.copyWith(color: c.inkMuted)),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Text(label, maxLines: 1, style: OmText.caption.copyWith(color: c.inkMuted)),
+          ),
         ],
       ),
     );

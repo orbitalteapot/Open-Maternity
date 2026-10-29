@@ -418,7 +418,7 @@ class ToolsTab extends StatelessWidget {
                   title: t('t_appts'),
                   status: upcoming.isEmpty
                       ? t('nothing_planned')
-                      : t('next_at', <String, Object?>{'t': '${f.weekdayShort(upcoming.first.when)} ${upcoming.first.time}'}),
+                      : t('next_at', <String, Object?>{'t': '${f.dayMonthShort(upcoming.first.when)} ${upcoming.first.time}'}),
                   onTap: () => pushScreen(context, const AppointmentsScreen()),
                 ),
                 _ToolTile(
@@ -492,7 +492,11 @@ class _ToolTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     spacing: 4,
                     children: <Widget>[
-                      Text(title, style: OmText.title.copyWith(color: c.ink)),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(title, maxLines: 1, style: OmText.title.copyWith(color: c.ink)),
+                      ),
                       Text(
                         status,
                         style: running ? OmText.captionBold.copyWith(color: c.clay) : OmText.caption.copyWith(color: c.inkMuted),
@@ -512,7 +516,16 @@ class _ToolTile extends StatelessWidget {
 // ------------------------------------------------------------------ History
 
 class _Event {
-  _Event({required this.at, required this.type, required this.icon, required this.tone, required this.title, required this.sub, this.contraction});
+  _Event({
+    required this.at,
+    required this.type,
+    required this.icon,
+    required this.tone,
+    required this.title,
+    required this.sub,
+    this.contraction,
+    this.move,
+  });
 
   final int at;
   final String type;
@@ -521,6 +534,7 @@ class _Event {
   final String title;
   final String sub;
   final Contraction? contraction;
+  final MoveSession? move;
 }
 
 class HistoryTab extends StatefulWidget {
@@ -551,7 +565,7 @@ class _HistoryTabState extends State<HistoryTab> {
       events.add(_Event(at: cs[i].start, type: 'contractions', icon: Icons.timer_rounded, tone: Tone.clay, title: t('h_contraction'), sub: sub, contraction: cs[i]));
     }
     for (final MoveSession m in d.moves) {
-      events.add(_Event(at: m.start, type: 'movements', icon: Icons.touch_app_rounded, tone: Tone.clay, title: t('h_session'), sub: movesLine(t, m)));
+      events.add(_Event(at: m.start, type: 'movements', icon: Icons.touch_app_rounded, tone: Tone.clay, title: t('h_session'), sub: movesLine(t, m), move: m));
     }
     for (final WeightEntry w in d.weights) {
       events.add(_Event(at: w.at, type: 'weight', icon: Icons.monitor_weight_rounded, tone: Tone.sage, title: t('h_weight'), sub: '${f.kg(w.kg)} kg'));
@@ -649,6 +663,13 @@ class _EventRow extends StatelessWidget {
                   label: '${t('edit')}, $time',
                   color: c.inkMuted,
                   onPressed: () => showContractionSheet(context, event.contraction!),
+                )
+              else if (event.move != null)
+                OmIconButton(
+                  icon: Icons.edit_rounded,
+                  label: '${t('edit')}, $time',
+                  color: c.inkMuted,
+                  onPressed: () => showMoveSheet(context, event.move!),
                 )
               else
                 const SizedBox(width: 48),

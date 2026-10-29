@@ -36,7 +36,12 @@ class AppStore extends ChangeNotifier {
         data = AppData.fromJson(jsonDecode(raw));
       }
     } catch (_) {
-      // Unreadable file: start fresh rather than crash.
+      // Unreadable file: keep a copy of it, then start fresh rather than crash.
+      try {
+        await storage.keepUnreadableCopy();
+      } catch (_) {
+        // Nothing more we can do.
+      }
     }
     if (!appLanguages.contains(data.lang)) {
       data.lang = initialLang;
@@ -54,6 +59,21 @@ class AppStore extends ChangeNotifier {
 
   Timer? _saveTimer;
   Future<void> _writing = Future<void>.value();
+
+  /// Goes up when everything is replaced (delete everything, restore), so an
+  /// Undo from before can no longer bring old entries back.
+  int _epoch = 0;
+
+  VoidCallback _undo(void Function() action) {
+    final int epoch = _epoch;
+    return () {
+      if (epoch != _epoch) {
+        return;
+      }
+      action();
+      _changed();
+    };
+  }
 
   S get t => S(data.lang);
 
@@ -184,17 +204,18 @@ class AppStore extends ChangeNotifier {
     if (data.running == 0) {
       return null;
     }
-    final List<Contraction> before = data.contractions;
     final int startedAt = data.running;
     final int end = max(now ?? _nowMs(), startedAt);
-    data.contractions = <Contraction>[...before, Contraction(id: newId(), start: startedAt, end: end)];
+    final Contraction added = Contraction(id: newId(), start: startedAt, end: end);
+    data.contractions = <Contraction>[...data.contractions, added];
     data.running = 0;
     _changed();
-    return () {
-      data.contractions = before;
-      data.running = startedAt;
-      _changed();
-    };
+    return _undo(() {
+      data.contractions = data.contractions.where((Contraction c) => c.id != added.id).toList();
+      if (data.running == 0) {
+        data.running = startedAt;
+      }
+    });
   }
 
   void updateContraction(String id, {required int start, required int end}) {
@@ -209,13 +230,14 @@ class AppStore extends ChangeNotifier {
   }
 
   VoidCallback deleteContraction(String id) {
-    final List<Contraction> before = data.contractions;
-    data.contractions = before.where((Contraction c) => c.id != id).toList();
+    final Contraction? removed = data.contractions.where((Contraction c) => c.id == id).firstOrNull;
+    data.contractions = data.contractions.where((Contraction c) => c.id != id).toList();
     _changed();
-    return () {
-      data.contractions = before;
-      _changed();
-    };
+    return _undo(() {
+      if (removed != null && !data.contractions.any((Contraction c) => c.id == id)) {
+        data.contractions = <Contraction>[...data.contractions, removed];
+      }
+    });
   }
 
   // ---------------------------------------------------------------- movements
@@ -242,16 +264,37 @@ class AppStore extends ChangeNotifier {
     if (m == null) {
       return null;
     }
-    final List<MoveSession> before = data.moves;
     final int end = max(now ?? _nowMs(), m.start);
-    data.moves = <MoveSession>[...before, MoveSession(id: newId(), start: m.start, end: end, count: m.count)];
+    final MoveSession added = MoveSession(id: newId(), start: m.start, end: end, count: m.count);
+    data.moves = <MoveSession>[...data.moves, added];
     data.move = null;
     _changed();
-    return () {
-      data.moves = before;
-      data.move = m;
-      _changed();
-    };
+    return _undo(() {
+      data.moves = data.moves.where((MoveSession x) => x.id != added.id).toList();
+      data.move ??= m;
+    });
+  }
+
+  void updateMoveSession(String id, {required int start, required int end, required int count}) {
+    data.moves = data.moves.map((MoveSession m) {
+      if (m.id != id) {
+        return m;
+      }
+      final int safeEnd = end >= start ? end : start + (m.end - m.start);
+      return MoveSession(id: m.id, start: start, end: safeEnd, count: max(0, count));
+    }).toList();
+    _changed();
+  }
+
+  VoidCallback deleteMoveSession(String id) {
+    final MoveSession? removed = data.moves.where((MoveSession m) => m.id == id).firstOrNull;
+    data.moves = data.moves.where((MoveSession m) => m.id != id).toList();
+    _changed();
+    return _undo(() {
+      if (removed != null && !data.moves.any((MoveSession m) => m.id == id)) {
+        data.moves = <MoveSession>[...data.moves, removed];
+      }
+    });
   }
 
   // ---------------------------------------------------------------- hospital bag
@@ -275,16 +318,19 @@ class AppStore extends ChangeNotifier {
   }
 
   VoidCallback removeBagItem(String id) {
-    final List<BagItem> before = data.bagCustom;
-    final Set<String> doneBefore = data.bagDone;
-    data.bagCustom = before.where((BagItem b) => b.id != id).toList();
-    data.bagDone = Set<String>.from(doneBefore)..remove(id);
+    final BagItem? removed = data.bagCustom.where((BagItem b) => b.id == id).firstOrNull;
+    final bool wasDone = data.bagDone.contains(id);
+    data.bagCustom = data.bagCustom.where((BagItem b) => b.id != id).toList();
+    data.bagDone = Set<String>.from(data.bagDone)..remove(id);
     _changed();
-    return () {
-      data.bagCustom = before;
-      data.bagDone = doneBefore;
-      _changed();
-    };
+    return _undo(() {
+      if (removed != null && !data.bagCustom.any((BagItem b) => b.id == id)) {
+        data.bagCustom = <BagItem>[...data.bagCustom, removed];
+        if (wasDone) {
+          data.bagDone = <String>{...data.bagDone, id};
+        }
+      }
+    });
   }
 
   // ---------------------------------------------------------------- appointments
@@ -298,13 +344,14 @@ class AppStore extends ChangeNotifier {
   }
 
   VoidCallback deleteAppt(String id) {
-    final List<Appointment> before = data.appts;
-    data.appts = before.where((Appointment a) => a.id != id).toList();
+    final Appointment? removed = data.appts.where((Appointment a) => a.id == id).firstOrNull;
+    data.appts = data.appts.where((Appointment a) => a.id != id).toList();
     _changed();
-    return () {
-      data.appts = before;
-      _changed();
-    };
+    return _undo(() {
+      if (removed != null && !data.appts.any((Appointment a) => a.id == id)) {
+        data.appts = <Appointment>[...data.appts, removed];
+      }
+    });
   }
 
   // ---------------------------------------------------------------- medicines
@@ -315,13 +362,21 @@ class AppStore extends ChangeNotifier {
     _changed(meds: true);
   }
 
+  /// Removes a medicine and when it was taken.
   VoidCallback deleteMed(String id) {
-    final List<Medicine> before = data.meds;
-    data.meds = before.where((Medicine m) => m.id != id).toList();
+    final Medicine? removed = data.meds.where((Medicine m) => m.id == id).firstOrNull;
+    final List<MedTaken> removedLog = data.medLog.where((MedTaken l) => l.medId == id).toList();
+    data.meds = data.meds.where((Medicine m) => m.id != id).toList();
+    data.medLog = data.medLog.where((MedTaken l) => l.medId != id).toList();
     _changed(meds: true);
     return () {
-      data.meds = before;
-      _changed(meds: true);
+      _undo(() {
+        if (removed != null && !data.meds.any((Medicine m) => m.id == id)) {
+          data.meds = <Medicine>[...data.meds, removed];
+          data.medLog = <MedTaken>[...data.medLog, ...removedLog];
+        }
+      })();
+      unawaited(syncReminders());
     };
   }
 
@@ -331,13 +386,12 @@ class AppStore extends ChangeNotifier {
   }
 
   VoidCallback markTaken(String medId, {int? now}) {
-    final List<MedTaken> before = data.medLog;
-    data.medLog = <MedTaken>[...before, MedTaken(medId: medId, at: now ?? _nowMs())];
+    final MedTaken entry = MedTaken(medId: medId, at: now ?? _nowMs());
+    data.medLog = <MedTaken>[...data.medLog, entry];
     _changed();
-    return () {
-      data.medLog = before;
-      _changed();
-    };
+    return _undo(() {
+      data.medLog = data.medLog.where((MedTaken l) => !identical(l, entry)).toList();
+    });
   }
 
   // ---------------------------------------------------------------- weight
@@ -348,19 +402,21 @@ class AppStore extends ChangeNotifier {
   }
 
   VoidCallback deleteWeight(String id) {
-    final List<WeightEntry> before = data.weights;
-    data.weights = before.where((WeightEntry w) => w.id != id).toList();
+    final WeightEntry? removed = data.weights.where((WeightEntry w) => w.id == id).firstOrNull;
+    data.weights = data.weights.where((WeightEntry w) => w.id != id).toList();
     _changed();
-    return () {
-      data.weights = before;
-      _changed();
-    };
+    return _undo(() {
+      if (removed != null && !data.weights.any((WeightEntry w) => w.id == id)) {
+        data.weights = <WeightEntry>[...data.weights, removed];
+      }
+    });
   }
 
   // ---------------------------------------------------------------- everything
 
   /// Removes everything except the chosen language, and starts from the first screen.
   void deleteEverything() {
+    _epoch++;
     data = AppData(lang: data.lang);
     sessionTheme = '';
     _changed(meds: true);
@@ -373,6 +429,7 @@ class AppStore extends ChangeNotifier {
     if (!appLanguages.contains(next.lang)) {
       next.lang = data.lang;
     }
+    _epoch++;
     data = next;
     sessionTheme = '';
     _changed(meds: true);

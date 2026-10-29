@@ -53,7 +53,6 @@ class WardCallBar extends StatelessWidget {
     final String ward = context.store.data.number('ward');
     return BottomBar(
       children: <Widget>[
-        Text(t('c_ward_note'), style: OmText.caption.copyWith(color: c.inkMuted)),
         if (ward.isNotEmpty)
           OmButton(
             label: t('u_call'),
@@ -124,6 +123,7 @@ class _ContractionsBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppStore store = context.store;
     final S t = context.t;
+    final Fmt f = Fmt(t);
     final OmColors c = context.om;
     final AppData d = store.data;
     return ToolPage(
@@ -153,21 +153,20 @@ class _ContractionsBody extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   spacing: 8,
                   children: <Widget>[
-                    IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 8,
-                        children: <Widget>[
-                          Expanded(
-                            child: StatBox(
-                              value: stats.avgIntervalSec > 0 ? formatDuration(stats.avgIntervalSec) : '–',
-                              label: t('c_apart'),
-                            ),
-                          ),
-                          Expanded(child: StatBox(value: formatDuration(stats.avgDurationSec), label: t('c_lasting'))),
-                          Expanded(child: StatBox(value: '${stats.inLastHour}', label: t('c_hour'))),
-                        ],
-                      ),
+                    TwoColumns(
+                      gap: 8,
+                      children: <Widget>[
+                        StatBox(
+                          value: stats.avgIntervalSec > 0 ? formatDuration(stats.avgIntervalSec) : '–',
+                          label: t('c_apart'),
+                        ),
+                        StatBox(value: formatDuration(stats.avgDurationSec), label: t('c_lasting')),
+                        StatBox(
+                          value: stats.per10Min > 0 ? f.oneDecimal(stats.per10Min) : '–',
+                          label: t('c_per10'),
+                        ),
+                        StatBox(value: '${stats.inLastHour}', label: t('c_hour')),
+                      ],
                     ),
                     Text(t('c_avg', <String, Object?>{'n': stats.sample}), style: OmText.caption.copyWith(color: c.inkMuted)),
                   ],
@@ -374,7 +373,6 @@ class _MovementsBody extends StatelessWidget {
                     ],
                   ),
                 ),
-              Notice(icon: Icons.info_rounded, body: t('m_notice')),
               if (sessions.isNotEmpty) ...<Widget>[
                 SectionLabel(t('m_earlier')),
                 OmGroup(
@@ -385,6 +383,8 @@ class _MovementsBody extends StatelessWidget {
                         title: movesLine(t, m),
                         titleStyle: OmText.body.copyWith(color: c.ink),
                         subtitle: '${f.dayLabel(m.start, now: nowMs)}, ${f.time(m.start)}',
+                        onTap: () => showMoveSheet(context, m),
+                        trailing: Icon(Icons.edit_rounded, color: c.inkMuted),
                       ),
                   ],
                 ),
@@ -608,8 +608,57 @@ class _ApptCard extends StatelessWidget {
 
 // ------------------------------------------------------------------ medicines
 
-class MedicinesScreen extends StatelessWidget {
+class MedicinesScreen extends StatefulWidget {
   const MedicinesScreen({super.key});
+
+  @override
+  State<MedicinesScreen> createState() => _MedicinesScreenState();
+}
+
+class _MedicinesScreenState extends State<MedicinesScreen> with WidgetsBindingObserver {
+  /// True when there are medicines but the phone blocks notifications.
+  bool _remindersOff = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _check(ask: true));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back from the phone's settings: check again.
+    if (state == AppLifecycleState.resumed) {
+      _check(ask: false);
+    }
+  }
+
+  Future<void> _check({required bool ask}) async {
+    final AppStore store = context.storeRead;
+    if (store.data.meds.isEmpty) {
+      if (_remindersOff && mounted) {
+        setState(() => _remindersOff = false);
+      }
+      return;
+    }
+    bool allowed = await store.reminders.isAllowed();
+    if (!allowed && ask) {
+      allowed = await store.reminders.requestPermission();
+    }
+    if (allowed) {
+      await store.syncReminders();
+    }
+    if (mounted) {
+      setState(() => _remindersOff = !allowed);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -621,11 +670,33 @@ class MedicinesScreen extends StatelessWidget {
       title: t('t_meds'),
       bottom: BottomBar(
         children: <Widget>[
-          OmButton(label: t('md_add'), icon: Icons.add_rounded, expand: true, onPressed: () => showMedSheet(context)),
+          OmButton(
+            label: t('md_add'),
+            icon: Icons.add_rounded,
+            expand: true,
+            onPressed: () async {
+              await showMedSheet(context);
+              if (mounted) {
+                await _check(ask: false);
+              }
+            },
+          ),
         ],
       ),
       body: PageBody(
         children: <Widget>[
+          if (meds.isNotEmpty && _remindersOff)
+            Notice(
+              icon: Icons.notifications_off_rounded,
+              tone: NoticeTone.caution,
+              body: t('md_perm_off'),
+              action: OmButton(
+                label: t('md_perm_on'),
+                kind: BtnKind.quiet,
+                color: c.onHoneySoft,
+                onPressed: () => _check(ask: true),
+              ),
+            ),
           if (meds.isEmpty)
             EmptyState(icon: Icons.medication_rounded, title: t('md_empty'), body: t('md_empty_sub'))
           else ...<Widget>[
@@ -778,15 +849,15 @@ class NumbersScreen extends StatelessWidget {
     return OmRow(
       leading: Lead(roleIcons[role]!, tone: number.isEmpty ? Tone.honey : Tone.clay),
       title: title,
+      singleLineTitle: true,
       subtitle: sub,
       onTap: () => showNumberSheet(context, role),
       trailing: number.isNotEmpty
           ? CallButton(label: '${t('call')} $title', onPressed: () => callNumber(context, number))
-          : OmChip(
-              label: t('add_short'),
+          : RoundButton(
               icon: Icons.add_rounded,
-              semanticsLabel: '${t('add_number')}: $title',
-              onTap: () => showNumberSheet(context, role),
+              label: '${t('add_number')}: $title',
+              onPressed: () => showNumberSheet(context, role),
             ),
     );
   }

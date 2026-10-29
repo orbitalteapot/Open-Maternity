@@ -69,6 +69,21 @@ void main() {
       expect(s.avgIntervalSec, 0);
     });
 
+    test('a gap of more than an hour starts a new run', () {
+      // Six on Monday, two on Wednesday: only Wednesday's count.
+      final List<Contraction> list = <Contraction>[
+        c(0, 40), c(6, 40), c(12, 40), c(18, 40), c(24, 40), c(30, 40),
+        c(2 * 24 * 60, 60), c(2 * 24 * 60 + 4, 60),
+      ];
+      final ContractionStats s = contractionStats(list, list.last.end);
+      expect(s.sample, 2);
+      expect(s.avgIntervalSec, 240);
+      expect(s.per10Min, 2.5);
+      final List<Contraction> sorted = sortedContractions(list);
+      expect(intervalBefore(sorted, 6), isNull);
+      expect(intervalBefore(sorted, 7), 240);
+    });
+
     test('order of input does not matter', () {
       final ContractionStats a = contractionStats(<Contraction>[c(0, 40), c(6, 50), c(12, 60)], 1800000000000 + 3600000);
       final ContractionStats b = contractionStats(<Contraction>[c(12, 60), c(0, 40), c(6, 50)], 1800000000000 + 3600000);
@@ -98,6 +113,13 @@ void main() {
       expect(dialable('+47 22 33 44 55'), '+4722334455');
       expect(dialable('(0) 123-456'), '0123456');
       expect(dialable('ward'), '');
+    });
+
+    test('picked times land on the nearest day', () {
+      final DateTime justAfterMidnight = DateTime(2026, 10, 30, 0, 0, 20);
+      expect(nearestClockTime(justAfterMidnight, 23, 59), DateTime(2026, 10, 29, 23, 59));
+      expect(nearestClockTime(DateTime(2026, 10, 29, 23, 59, 30), 0, 1), DateTime(2026, 10, 30, 0, 1));
+      expect(nearestClockTime(DateTime(2026, 10, 29, 14, 0), 14, 5), DateTime(2026, 10, 29, 14, 5));
     });
 
     test('clock parsing', () {
@@ -225,6 +247,59 @@ void main() {
       undo();
       expect(s.data.bagCustom.single.text, 'Pillow');
       expect(s.data.bagDone, contains(id));
+    });
+
+    test('undo brings back only what it removed', () async {
+      final AppStore s = await fresh();
+      s.addBagItem('you', 'Pillow');
+      final String id = s.data.bagCustom.single.id;
+      final void Function() undo = s.removeBagItem(id);
+      s.toggleBag('charger');
+      undo();
+      expect(s.data.bagCustom.single.text, 'Pillow');
+      expect(s.data.bagDone, contains('charger'));
+    });
+
+    test('removing a medicine removes when it was taken, and undo restores both', () async {
+      final AppStore s = await fresh();
+      s.saveMed(const Medicine(id: 'm1', name: 'Iron', time: '08:00'));
+      s.markTaken('m1', now: 1000);
+      final void Function() undo = s.deleteMed('m1');
+      expect(s.data.meds, isEmpty);
+      expect(s.data.medLog, isEmpty);
+      undo();
+      expect(s.data.meds.single.name, 'Iron');
+      expect(s.data.medLog.single.at, 1000);
+    });
+
+    test('undo does nothing after delete everything', () async {
+      final AppStore s = await fresh();
+      s.addWeight(70, now: 1000);
+      final void Function() undo = s.deleteWeight(s.data.weights.single.id);
+      s.deleteEverything();
+      undo();
+      expect(s.data.weights, isEmpty);
+    });
+
+    test('movement sessions can be edited and deleted', () async {
+      final AppStore s = await fresh();
+      s.startMoves(now: 1000);
+      s.countMove();
+      s.endMoves(now: 61000);
+      final String id = s.data.moves.single.id;
+      s.updateMoveSession(id, start: 2000, end: 122000, count: 9);
+      expect(s.data.moves.single.count, 9);
+      expect(s.data.moves.single.end, 122000);
+      final void Function() undo = s.deleteMoveSession(id);
+      expect(s.data.moves, isEmpty);
+      undo();
+      expect(s.data.moves.single.count, 9);
+    });
+
+    test('an unreadable file is kept before starting fresh', () async {
+      final MemoryStateStorage storage = MemoryStateStorage('{oops');
+      await AppStore.open(storage: storage, saveDelay: Duration.zero);
+      expect(storage.unreadableCopies, 1);
     });
 
     test('delete everything keeps the language only', () async {

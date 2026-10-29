@@ -54,11 +54,40 @@ class LocalReminders implements Reminders {
   }
 
   @override
+  Future<bool> isAllowed() async {
+    if (!_ready) {
+      return false;
+    }
+    if (Platform.isAndroid) {
+      final AndroidFlutterLocalNotificationsPlugin? android =
+          _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      return await android?.areNotificationsEnabled() ?? true;
+    }
+    if (Platform.isIOS) {
+      final IOSFlutterLocalNotificationsPlugin? ios =
+          _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
+      final NotificationsEnabledOptions? options = await ios?.checkPermissions();
+      return options?.isEnabled ?? false;
+    }
+    return false;
+  }
+
+  @override
   Future<void> sync(List<Medicine> meds, S t) async {
     if (!_ready) {
       return;
     }
-    await _plugin.cancelAll();
+    // Each reminder carries a key of what it is for. If the phone already has
+    // exactly these, leave them alone, so a reminder that is about to fire is
+    // never dropped just because the app was opened.
+    final List<Medicine> valid = meds.where((Medicine m) => parseClock(m.time) != null).toList();
+    final Set<String> wanted = <String>{for (final Medicine m in valid) _key(m, t)};
+    final List<PendingNotificationRequest> pending = await _plugin.pendingNotificationRequests();
+    final Set<String> existing = <String>{for (final PendingNotificationRequest p in pending) p.payload ?? ''};
+    if (existing.length == pending.length && existing.length == wanted.length && existing.containsAll(wanted)) {
+      return;
+    }
+    await _plugin.cancelAllPendingNotifications();
     final NotificationDetails details = NotificationDetails(
       android: AndroidNotificationDetails(
         'medicine_reminders',
@@ -71,11 +100,8 @@ class LocalReminders implements Reminders {
       iOS: const DarwinNotificationDetails(),
     );
     int id = 1;
-    for (final Medicine m in meds) {
-      final ({int hour, int minute})? clock = parseClock(m.time);
-      if (clock == null) {
-        continue;
-      }
+    for (final Medicine m in valid) {
+      final ({int hour, int minute}) clock = parseClock(m.time)!;
       final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
       tz.TZDateTime when = tz.TZDateTime(tz.local, now.year, now.month, now.day, clock.hour, clock.minute);
       if (!when.isAfter(now)) {
@@ -88,8 +114,11 @@ class LocalReminders implements Reminders {
         androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
         title: t('md_notif_title', <String, Object?>{'name': m.name}),
         body: t('md_notif_body'),
+        payload: _key(m, t),
         matchDateTimeComponents: DateTimeComponents.time,
       );
     }
   }
+
+  String _key(Medicine m, S t) => 'med|${m.id}|${m.time}|${t.lang}|${m.name}';
 }

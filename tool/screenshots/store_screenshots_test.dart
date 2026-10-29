@@ -4,7 +4,6 @@
 // The images land in tool/screenshots/out/<store>/<language>/.
 
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
