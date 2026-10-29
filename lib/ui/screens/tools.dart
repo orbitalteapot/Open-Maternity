@@ -168,7 +168,7 @@ class _ContractionsBody extends StatelessWidget {
               if (longBreak)
                 Notice(
                   icon: Icons.more_time_rounded,
-                  title: t('c_series_long', <String, Object?>{'t': sinceText(t, nowMs - newest!.end)}),
+                  title: t('c_series_long', <String, Object?>{'t': sinceText(t, nowMs - newest.end)}),
                   body: t('c_series_sub'),
                   action: OmButton(
                     label: t('c_series_new'),
