@@ -1,0 +1,143 @@
+name: CI
+
+# Every push to main: checks the code, runs the tests, builds Android and iOS,
+# and publishes an installable test APK on the "test-build" release.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  FLUTTER_VERSION: "3.47.8"
+
+jobs:
+  test:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Get packages
+        run: flutter pub get 2>&1 | tee -a ci-log.txt
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos 2>&1 | tee -a ci-log.txt
+      - name: Test
+        run: flutter test 2>&1 | tee -a ci-log.txt
+      - name: Save log
+        if: always() && github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_STATUS: ${{ job.status }}
+        run: bash tool/push_log.sh ci-logs-test ci-log.txt
+
+  android:
+    name: Android build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check platform folders
+        id: ready
+        run: |
+          if [ -f android/app/build.gradle.kts ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::notice::android/ is not set up yet; the setup workflow adds it."; fi
+      - uses: actions/setup-java@v4
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Get packages
+        if: steps.ready.outputs.ok == 'true'
+        run: flutter pub get 2>&1 | tee -a ci-log.txt
+      - name: Build test APK (with test tools in Settings)
+        if: steps.ready.outputs.ok == 'true'
+        run: |
+          flutter build apk --release --dart-define=OM_TESTING=true --build-number=${{ github.run_number }} 2>&1 | tee -a ci-log.txt
+          cp build/app/outputs/flutter-apk/app-release.apk open-maternity-test.apk
+      - name: Build Play Store bundle
+        if: steps.ready.outputs.ok == 'true'
+        run: flutter build appbundle --release --build-number=${{ github.run_number }} 2>&1 | tee -a ci-log.txt
+      - uses: actions/upload-artifact@v4
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          name: android-${{ github.run_number }}
+          path: |
+            open-maternity-test.apk
+            build/app/outputs/bundle/release/app-release.aab
+      - name: Publish test APK
+        if: steps.ready.outputs.ok == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_STATUS: success
+        run: |
+          gh release delete test-build --yes --cleanup-tag || true
+          gh release create test-build open-maternity-test.apk \
+            --prerelease \
+            --target "${GITHUB_SHA}" \
+            --title "Test build ${GITHUB_RUN_NUMBER}" \
+            --notes "Android test build from ${GITHUB_SHA::7}. Download open-maternity-test.apk on your Android phone and open it to install (allow installing from this source when asked). Settings has an extra 'For testing' section with sample data. Not for the store."
+          bash tool/push_log.sh test-apk open-maternity-test.apk
+      - name: Save log
+        if: always() && github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_STATUS: ${{ job.status }}
+        run: bash tool/push_log.sh ci-logs-android ci-log.txt
+
+  ios:
+    name: iOS build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check platform folders
+        id: ready
+        run: |
+          if [ -f ios/Runner/Info.plist ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::notice::ios/ is not set up yet; the setup workflow adds it."; fi
+      - uses: subosito/flutter-action@v2
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Get packages
+        if: steps.ready.outputs.ok == 'true'
+        run: flutter pub get 2>&1 | tee -a ci-log.txt
+      - name: Build iOS app (not signed)
+        if: steps.ready.outputs.ok == 'true'
+        run: |
+          xcodebuild -version | tee -a ci-log.txt
+          flutter build ios --release --no-codesign --build-number=${{ github.run_number }} 2>&1 | tee -a ci-log.txt
+          cd build/ios/iphoneos && zip -qr ../../../open-maternity-ios-unsigned.zip Runner.app
+      - uses: actions/upload-artifact@v4
+        if: steps.ready.outputs.ok == 'true'
+        with:
+          name: ios-unsigned-${{ github.run_number }}
+          path: open-maternity-ios-unsigned.zip
+      - name: Save log
+        if: always() && github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_STATUS: ${{ job.status }}
+        run: bash tool/push_log.sh ci-logs-ios ci-log.txt

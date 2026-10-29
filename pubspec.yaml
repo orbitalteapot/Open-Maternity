@@ -1,0 +1,53 @@
+name: open_maternity
+description: "A free, offline toolkit for pregnancy: contraction timer, movement counter, hospital bag, appointments, medicines and weight. No ads, no accounts, no tracking."
+publish_to: "none"
+
+# Keep in sync with lib/version.dart (a test checks this).
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.0
+  flutter: ">=3.38.1"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  file_picker: ^11.0.2
+  flutter_local_notifications: ^22.3.3
+  flutter_timezone: ^5.0.0
+  intl: ^0.20.2
+  path_provider: ^2.1.5
+  pdf: ^3.11.3
+  share_plus: ^13.0.0
+  timezone: ^0.11.0
+  url_launcher: ^6.3.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/fonts/AtkinsonHyperlegibleNext-Regular.ttf
+    - assets/fonts/AtkinsonHyperlegibleNext-Bold.ttf
+    - assets/fonts/OFL-AtkinsonHyperlegibleNext.txt
+    - assets/fonts/OFL-Fraunces.txt
+
+  fonts:
+    - family: Atkinson Hyperlegible Next
+      fonts:
+        - asset: assets/fonts/AtkinsonHyperlegibleNext-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/AtkinsonHyperlegibleNext-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/AtkinsonHyperlegibleNext-Bold.ttf
+          weight: 700
+    - family: Fraunces
+      fonts:
+        - asset: assets/fonts/Fraunces-SemiBold.ttf
+          weight: 600

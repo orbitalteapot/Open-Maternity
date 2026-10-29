@@ -1,0 +1,170 @@
+name: Release
+
+# Store builds. Start it by pushing a tag like v1.0.0, or by hand from the Actions tab.
+# Signing keys come from repository secrets; see docs/RELEASE.md. Each platform is
+# skipped (with a note) until its secrets are added.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  FLUTTER_VERSION: "3.47.8"
+
+jobs:
+  android:
+    name: Android (signed, Google Play)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Signing key present?
+        id: keys
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::warning::ANDROID_KEYSTORE_BASE64 is not set. Add the Android secrets from docs/RELEASE.md to sign store builds."; fi
+      - uses: actions/setup-java@v4
+        if: steps.keys.outputs.ok == 'true'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        if: steps.keys.outputs.ok == 'true'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Write signing config
+        if: steps.keys.outputs.ok == 'true'
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE" | base64 --decode > android/app/upload-keystore.jks
+          {
+            echo "storeFile=upload-keystore.jks"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/key.properties
+      - name: Build
+        if: steps.keys.outputs.ok == 'true'
+        run: |
+          flutter pub get
+          flutter build appbundle --release --build-number=${{ github.run_number }}
+          flutter build apk --release --build-number=${{ github.run_number }}
+          mkdir -p dist
+          cp build/app/outputs/bundle/release/app-release.aab dist/open-maternity.aab
+          cp build/app/outputs/flutter-apk/app-release.apk dist/open-maternity.apk
+      - uses: actions/upload-artifact@v4
+        if: steps.keys.outputs.ok == 'true'
+        with:
+          name: android-release-${{ github.run_number }}
+          path: dist/
+      - name: Attach to the GitHub release
+        if: steps.keys.outputs.ok == 'true' && startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes "Open Maternity ${GITHUB_REF_NAME}"
+          gh release upload "${GITHUB_REF_NAME}" dist/open-maternity.apk dist/open-maternity.aab --clobber
+      - name: Play service account present?
+        id: play
+        if: steps.keys.outputs.ok == 'true'
+        env:
+          PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          if [ -n "$PLAY_JSON" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::notice::PLAY_SERVICE_ACCOUNT_JSON not set; upload dist/open-maternity.aab in Play Console by hand."; fi
+      - name: Upload to Google Play (internal testing, draft)
+        if: steps.play.outputs.ok == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: no.openmaternity.app
+          releaseFiles: dist/open-maternity.aab
+          track: internal
+          status: draft
+
+  ios:
+    name: iOS (signed, TestFlight)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Signing keys present?
+        id: keys
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$CERT" ] && [ -n "$PROFILE" ] && [ -n "$TEAM" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::warning::Apple signing secrets are not set. Add them from docs/RELEASE.md to build for TestFlight."; fi
+      - uses: subosito/flutter-action@v2
+        if: steps.keys.outputs.ok == 'true'
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install certificate and profile
+        if: steps.keys.outputs.ok == 'true'
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          echo "$PROFILE" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychain -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision")")
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c "Print Name" /dev/stdin <<< "$(security cms -D -i "$RUNNER_TEMP/profile.mobileprovision")")
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/$PROFILE_UUID.mobileprovision"
+          echo "PROFILE_NAME=$PROFILE_NAME" >> "$GITHUB_ENV"
+      - name: Use manual signing for the app target
+        if: steps.keys.outputs.ok == 'true'
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: python3 tool/ios_signing.py "$TEAM" "$PROFILE_NAME"
+      - name: Build IPA
+        if: steps.keys.outputs.ok == 'true'
+        run: |
+          flutter pub get
+          flutter build ipa --release --build-number=${{ github.run_number }} --export-options-plist=ios/ExportOptions.plist
+      - uses: actions/upload-artifact@v4
+        if: steps.keys.outputs.ok == 'true'
+        with:
+          name: ios-release-${{ github.run_number }}
+          path: build/ios/ipa/*.ipa
+      - name: App Store Connect key present?
+        id: asc
+        if: steps.keys.outputs.ok == 'true'
+        env:
+          KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8_BASE64 }}
+        run: |
+          if [ -n "$KEY" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::notice::App Store Connect API key not set; upload the IPA with Transporter by hand."; fi
+      - name: Upload to TestFlight
+        if: steps.asc.outputs.ok == 'true'
+        env:
+          KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8_BASE64 }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          echo "$KEY" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
+          xcrun altool --upload-app --type ios --file build/ios/ipa/*.ipa --apiKey "$KEY_ID" --apiIssuer "$ISSUER"
