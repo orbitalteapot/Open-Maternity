@@ -10,6 +10,7 @@ import '../../l10n/format.dart';
 import '../../l10n/strings.dart';
 import '../../theme/tokens.dart';
 import '../actions.dart';
+import '../chart_cards.dart';
 import '../scope.dart';
 import '../sheets/sheets.dart';
 import '../widgets.dart';
@@ -110,12 +111,24 @@ class _ContractionsBody extends StatelessWidget {
     final AppStore store = context.storeRead;
     final S t = store.t;
     if (store.data.running == 0) {
-      store.startContraction();
+      final VoidCallback? undoSeries = store.startContraction();
+      if (undoSeries != null) {
+        toastText(t('c_series_started'), undoLabel: t('undo'), undo: undoSeries);
+      }
     } else {
       final VoidCallback? undo = store.stopContraction();
       if (undo != null) {
         toastText(t('c_saved'), undoLabel: t('undo'), undo: undo);
       }
+    }
+  }
+
+  void _newSeries(BuildContext context) {
+    final AppStore store = context.storeRead;
+    final S t = store.t;
+    final VoidCallback? undo = store.startNewSeries();
+    if (undo != null) {
+      toastText(t('c_series_started'), undoLabel: t('undo'), undo: undo);
     }
   }
 
@@ -135,19 +148,35 @@ class _ContractionsBody extends StatelessWidget {
         builder: (BuildContext context) {
           final int nowMs = DateTime.now().millisecondsSinceEpoch;
           final List<Contraction> cs = sortedContractions(d.contractions);
-          final ContractionStats stats = contractionStats(cs, nowMs);
+          final List<Contraction> series = currentSeries(cs, d.seriesStarts);
+          final ContractionStats stats = contractionStats(cs, nowMs, seriesStarts: d.seriesStarts);
           final bool running = d.running != 0;
           final int runSecs = running ? ((nowMs - d.running) / 1000).floor() : 0;
           final String runTime = formatTimer(runSecs);
-          final Contraction? newest = cs.isEmpty ? null : cs.last;
+          final Contraction? newest = series.isEmpty ? null : series.last;
+          final bool longBreak = !running && newest != null && nowMs - newest.end >= 30 * 60000;
           final String line = running
-              ? t('c_started', <String, Object?>{'t': clockOfMs(d.running)})
-              : (newest != null && nowMs - newest.end < 15 * 60000)
-                  ? t('c_saved_len', <String, Object?>{'d': formatDuration(newest.durationMs / 1000)})
-                  : t('c_hint_idle');
-          final List<Contraction> recent = cs.reversed.take(5).toList();
+              ? t('c_started', <String, Object?>{'t': clockWithSeconds(DateTime.fromMillisecondsSinceEpoch(d.running))})
+              : (series.isEmpty && cs.isNotEmpty)
+                  ? t('c_series_empty')
+                  : (newest != null && nowMs - newest.end < 15 * 60000)
+                      ? t('c_saved_len', <String, Object?>{'d': formatDuration(newest.durationMs / 1000)})
+                      : t('c_hint_idle');
+          final List<Contraction> recent = series.reversed.take(5).toList();
           return PageBody(
             children: <Widget>[
+              if (longBreak)
+                Notice(
+                  icon: Icons.more_time_rounded,
+                  title: t('c_series_long', <String, Object?>{'t': sinceText(t, nowMs - newest!.end)}),
+                  body: t('c_series_sub'),
+                  action: OmButton(
+                    label: t('c_series_new'),
+                    icon: Icons.playlist_add_rounded,
+                    kind: BtnKind.quiet,
+                    onPressed: () => _newSeries(context),
+                  ),
+                ),
               if (stats.sample >= 2)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -213,13 +242,25 @@ class _ContractionsBody extends StatelessWidget {
                 ),
               ),
               if (recent.isNotEmpty) ...<Widget>[
-                SectionLabel(t('c_recent')),
+                Row(
+                  children: <Widget>[
+                    Expanded(child: SectionLabel(t('c_recent'))),
+                    if (!running && !longBreak)
+                      OmButton(
+                        label: t('c_series_short'),
+                        icon: Icons.playlist_add_rounded,
+                        kind: BtnKind.quiet,
+                        onPressed: () => _newSeries(context),
+                      ),
+                  ],
+                ),
                 OmGroup(
                   children: <Widget>[
-                    for (final Contraction x in recent) _ContractionRow(contraction: x, all: cs),
+                    for (final Contraction x in recent) _ContractionRow(contraction: x, all: cs, seriesStarts: d.seriesStarts),
                   ],
                 ),
               ],
+              if (ContractionChartCard.hasData(d)) const ContractionChartCard(),
             ],
           );
         },
@@ -229,45 +270,49 @@ class _ContractionsBody extends StatelessWidget {
 }
 
 class _ContractionRow extends StatelessWidget {
-  const _ContractionRow({required this.contraction, required this.all});
+  const _ContractionRow({required this.contraction, required this.all, required this.seriesStarts});
 
   final Contraction contraction;
   final List<Contraction> all;
+  final List<int> seriesStarts;
 
   @override
   Widget build(BuildContext context) {
     final S t = context.t;
     final OmColors c = context.om;
-    final double? gap = intervalBefore(all, all.indexOf(contraction));
+    final double? gap = intervalBefore(all, all.indexOf(contraction), seriesStarts: seriesStarts);
     final String time = clockOfMs(contraction.start);
     return Material(
       color: c.surfaceRaised,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 64),
-        child: Padding(
-          padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 8, 8),
-          child: Row(
-            children: <Widget>[
-              SizedBox(width: 56, child: Text(time, style: OmText.time.copyWith(color: c.ink))),
-              const Lead(Icons.timer_rounded),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(t('c_long', <String, Object?>{'d': formatDuration(contraction.durationMs / 1000)}), style: OmText.body.copyWith(color: c.ink)),
-                    if (gap != null)
-                      Text(t('c_after', <String, Object?>{'d': formatDuration(gap)}), style: OmText.caption.copyWith(color: c.inkMuted)),
-                  ],
+      child: InkWell(
+        onTap: () => showContractionSheet(context, contraction),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 64),
+          child: Padding(
+            padding: const EdgeInsetsDirectional.fromSTEB(16, 8, 8, 8),
+            child: Row(
+              children: <Widget>[
+                SizedBox(width: 56, child: Text(time, style: OmText.time.copyWith(color: c.ink))),
+                const Lead(Icons.timer_rounded),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(t('c_long', <String, Object?>{'d': formatDuration(contraction.durationMs / 1000)}), style: OmText.body.copyWith(color: c.ink)),
+                      if (gap != null)
+                        Text(t('c_after', <String, Object?>{'d': formatDuration(gap)}), style: OmText.caption.copyWith(color: c.inkMuted)),
+                    ],
+                  ),
                 ),
-              ),
-              OmIconButton(
-                icon: Icons.edit_rounded,
-                label: '${t('c_edit')}, $time',
-                color: c.inkMuted,
-                onPressed: () => showContractionSheet(context, contraction),
-              ),
-            ],
+                OmIconButton(
+                  icon: Icons.edit_rounded,
+                  label: '${t('c_edit')}, $time',
+                  color: c.inkMuted,
+                  onPressed: () => showContractionSheet(context, contraction),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -373,6 +418,7 @@ class _MovementsBody extends StatelessWidget {
                     ],
                   ),
                 ),
+              if (MovementChartCard.hasData(d)) const MovementChartCard(),
               if (sessions.isNotEmpty) ...<Widget>[
                 SectionLabel(t('m_earlier')),
                 OmGroup(

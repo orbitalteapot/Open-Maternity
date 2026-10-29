@@ -68,16 +68,16 @@ Future<Uint8List> buildSummaryPdf(AppData data, S t, DateTime now) async {
 
   // Contractions, last 24 hours
   final List<Contraction> sorted = sortedContractions(data.contractions);
-  final ContractionStats stats = contractionStats(sorted, nowMs);
+  final ContractionStats stats = contractionStats(sorted, nowMs, seriesStarts: data.seriesStarts);
   final List<List<String>> cRows = <List<String>>[];
   for (int i = 0; i < sorted.length; i++) {
     final Contraction c = sorted[i];
     if (c.start < nowMs - 86400000) {
       continue;
     }
-    final double? gap = intervalBefore(sorted, i);
+    final double? gap = intervalBefore(sorted, i, seriesStarts: data.seriesStarts);
     cRows.add(<String>[
-      '${f.dayLabel(c.start, now: nowMs)} ${f.time(c.start)}',
+      '${f.dayLabel(c.start, now: nowMs)} ${clockWithSeconds(DateTime.fromMillisecondsSinceEpoch(c.start))}',
       formatDuration(c.durationMs / 1000),
       gap == null ? '–' : formatDuration(gap),
     ]);

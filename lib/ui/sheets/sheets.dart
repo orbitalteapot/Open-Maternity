@@ -1,6 +1,7 @@
 // Bottom sheets for adding and editing entries.
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -526,53 +527,52 @@ class _ContractionSheet extends StatefulWidget {
 
 class _ContractionSheetState extends State<_ContractionSheet> {
   late DateTime _start;
-  late DateTime _end;
+  late Duration _length;
 
   @override
   void initState() {
     super.initState();
     _start = DateTime.fromMillisecondsSinceEpoch(widget.contraction.start);
-    _end = DateTime.fromMillisecondsSinceEpoch(widget.contraction.end);
+    _length = Duration(milliseconds: widget.contraction.durationMs);
   }
 
-  Future<void> _pick(bool isStart) async {
-    final DateTime current = isStart ? _start : _end;
-    final TimeOfDay? tod = await pickTime(context, TimeOfDay.fromDateTime(current));
-    if (tod == null || !mounted) {
+  Future<void> _pickStart() async {
+    final Duration? d = await pickDuration(
+      context,
+      title: context.tRead('c_started_l'),
+      initial: Duration(hours: _start.hour, minutes: _start.minute, seconds: _start.second),
+    );
+    if (d == null || !mounted) {
       return;
     }
     setState(() {
-      if (isStart) {
-        // The day nearest the old time, so 00:01 -> 23:59 stays the evening before.
-        DateTime next = nearestClockTime(_start, tod.hour, tod.minute, second: _start.second);
-        if (next.isAfter(DateTime.now())) {
-          next = next.subtract(const Duration(days: 1));
-        }
-        final Duration length = _end.difference(_start);
-        _start = next;
-        _end = next.add(length);
-      } else {
-        DateTime next = nearestClockTime(_end, tod.hour, tod.minute, second: _end.second);
-        while (!next.isAfter(_start)) {
-          next = next.add(const Duration(days: 1));
-        }
-        if (next.difference(_start) > const Duration(hours: 1)) {
-          // A contraction never lasts an hour; the time was meant for the same minute range.
-          next = nearestClockTime(_start, tod.hour, tod.minute, second: _end.second);
-          if (!next.isAfter(_start)) {
-            next = _start.add(const Duration(seconds: 1));
-          }
-        }
-        _end = next;
+      // The day nearest the old time, so 00:00:20 -> 23:59:50 stays the evening before.
+      DateTime next = nearestClockTime(_start, d.inHours, d.inMinutes % 60, second: d.inSeconds % 60);
+      if (next.isAfter(DateTime.now())) {
+        next = next.subtract(const Duration(days: 1));
       }
+      _start = next;
     });
+  }
+
+  Future<void> _pickLength() async {
+    final Duration? d = await pickDuration(
+      context,
+      title: context.tRead('c_length_l'),
+      initial: Duration(seconds: _length.inSeconds),
+      mode: CupertinoTimerPickerMode.ms,
+    );
+    if (d == null || !mounted) {
+      return;
+    }
+    setState(() => _length = d < const Duration(seconds: 1) ? const Duration(seconds: 1) : d);
   }
 
   void _save() {
     context.storeRead.updateContraction(
       widget.contraction.id,
       start: _start.millisecondsSinceEpoch,
-      end: _end.millisecondsSinceEpoch,
+      end: _start.add(_length).millisecondsSinceEpoch,
     );
     Navigator.of(context).pop();
   }
@@ -588,12 +588,29 @@ class _ContractionSheetState extends State<_ContractionSheet> {
   @override
   Widget build(BuildContext context) {
     final S t = context.t;
+    final OmColors c = context.om;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: 16,
       children: <Widget>[
-        TapField(label: t('c_started_l'), value: clockOf(_start), placeholder: '', icon: Icons.schedule_rounded, onTap: () => _pick(true)),
-        TapField(label: t('c_ended_l'), value: clockOf(_end), placeholder: '', icon: Icons.schedule_rounded, onTap: () => _pick(false)),
+        TapField(
+          label: t('c_started_l'),
+          value: clockWithSeconds(_start),
+          placeholder: '',
+          icon: Icons.schedule_rounded,
+          onTap: _pickStart,
+        ),
+        TapField(
+          label: t('c_length_l'),
+          value: formatDuration(_length.inSeconds),
+          placeholder: '',
+          icon: Icons.timer_rounded,
+          onTap: _pickLength,
+        ),
+        Text(
+          t('c_ends_at', <String, Object?>{'t': clockWithSeconds(_start.add(_length))}),
+          style: OmText.caption.copyWith(color: c.inkMuted),
+        ),
         OmButton(label: t('save'), onPressed: _save, expand: true),
         OmButton(label: t('delete'), icon: Icons.delete_rounded, kind: BtnKind.outlined, onPressed: _delete, expand: true),
       ],

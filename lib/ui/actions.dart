@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../data/store.dart';
@@ -5,6 +6,7 @@ import '../l10n/strings.dart';
 import '../services/backup.dart';
 import '../services/phone.dart';
 import '../services/summary_pdf.dart';
+import '../theme/tokens.dart';
 import 'scope.dart';
 import 'sheets/sheets.dart';
 import 'widgets.dart';
@@ -46,6 +48,51 @@ Future<TimeOfDay?> pickTime(BuildContext context, TimeOfDay initial) {
       return MediaQuery(
         data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
         child: child ?? const SizedBox.shrink(),
+      );
+    },
+  );
+}
+
+/// Wheels for hours, minutes and seconds (or minutes and seconds), for times
+/// that need second precision. Returns null if closed without saving.
+Future<Duration?> pickDuration(
+  BuildContext context, {
+  required String title,
+  required Duration initial,
+  CupertinoTimerPickerMode mode = CupertinoTimerPickerMode.hms,
+}) {
+  final S t = context.tRead;
+  Duration value = initial;
+  final Duration limit = mode == CupertinoTimerPickerMode.ms ? const Duration(minutes: 59, seconds: 59) : const Duration(hours: 23, minutes: 59, seconds: 59);
+  final Duration start = initial < Duration.zero ? Duration.zero : (initial > limit ? limit : initial);
+  return showOmSheet<Duration>(
+    context,
+    title: title,
+    builder: (BuildContext ctx) {
+      final OmColors c = ctx.om;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: 16,
+        children: <Widget>[
+          SizedBox(
+            height: 216,
+            child: CupertinoTheme(
+              data: CupertinoThemeData(
+                brightness: c.brightness,
+                primaryColor: c.clay,
+                textTheme: CupertinoTextThemeData(
+                  pickerTextStyle: OmText.titleLg.copyWith(color: c.ink, fontWeight: FontWeight.w400),
+                ),
+              ),
+              child: CupertinoTimerPicker(
+                mode: mode,
+                initialTimerDuration: start,
+                onTimerDurationChanged: (Duration d) => value = d,
+              ),
+            ),
+          ),
+          OmButton(label: t('save'), expand: true, onPressed: () => Navigator.of(ctx).pop(value)),
+        ],
       );
     },
   );

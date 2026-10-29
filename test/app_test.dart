@@ -108,7 +108,7 @@ void main() {
 
     await tester.tap(find.text('History').last);
     await tester.pumpAndSettle();
-    expect(find.text('Last hour'), findsOneWidget);
+    expect(find.text('Time between contractions (min)'), findsOneWidget);
   });
 
   testWidgets('settings opens and changes theme', (WidgetTester tester) async {

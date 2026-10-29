@@ -69,19 +69,47 @@ void main() {
       expect(s.avgIntervalSec, 0);
     });
 
-    test('a gap of more than an hour starts a new run', () {
-      // Six on Monday, two on Wednesday: only Wednesday's count.
+    test('series: averages only use the current series', () {
+      // Six on Monday, two on Wednesday, with a new series started on Wednesday.
       final List<Contraction> list = <Contraction>[
         c(0, 40), c(6, 40), c(12, 40), c(18, 40), c(24, 40), c(30, 40),
         c(2 * 24 * 60, 60), c(2 * 24 * 60 + 4, 60),
       ];
-      final ContractionStats s = contractionStats(list, list.last.end);
+      final int wednesday = list[6].start;
+      final ContractionStats s = contractionStats(list, list.last.end, seriesStarts: <int>[wednesday]);
       expect(s.sample, 2);
       expect(s.avgIntervalSec, 240);
       expect(s.per10Min, 2.5);
       final List<Contraction> sorted = sortedContractions(list);
-      expect(intervalBefore(sorted, 6), isNull);
-      expect(intervalBefore(sorted, 7), 240);
+      expect(intervalBefore(sorted, 6, seriesStarts: <int>[wednesday]), isNull);
+      expect(intervalBefore(sorted, 7, seriesStarts: <int>[wednesday]), 240);
+      expect(splitSeries(sorted, <int>[wednesday]).map((List<Contraction> x) => x.length), <int>[6, 2]);
+      // A series started after the last contraction is empty until the next one.
+      expect(currentSeries(sorted, <int>[list.last.end + 1]), isEmpty);
+    });
+
+    test('old data is split into series where two hours or more passed', () {
+      final List<Contraction> list = <Contraction>[c(0, 40), c(6, 40), c(3 * 60, 40), c(3 * 60 + 5, 40)];
+      final AppData d = AppData.fromJson(<String, Object?>{
+        'contractions': list.map((Contraction x) => x.toJson()).toList(),
+      });
+      expect(d.seriesStarts, <int>[list[2].start]);
+      // Saved data keeps exactly what is stored, even an empty list.
+      final AppData again = AppData.fromJson(<String, Object?>{
+        'contractions': list.map((Contraction x) => x.toJson()).toList(),
+        'seriesStarts': <int>[],
+      });
+      expect(again.seriesStarts, isEmpty);
+    });
+
+    test('trend line and axis steps', () {
+      final TrendLine line = trendLine(<double>[0, 1, 2, 3], <double>[10, 8, 6, 4])!;
+      expect(line.slope, closeTo(-2, 1e-9));
+      expect(line.at(0), closeTo(10, 1e-9));
+      expect(trendLine(<double>[0, 1], <double>[1, 2]), isNull);
+      expect(niceStep(9), 2.5);
+      expect(niceStep(70), 20);
+      expect(niceStep(0), 1);
     });
 
     test('order of input does not matter', () {
@@ -279,6 +307,30 @@ void main() {
       s.deleteEverything();
       undo();
       expect(s.data.weights, isEmpty);
+    });
+
+    test('a new series starts by itself after two hours, and Undo joins it', () async {
+      final AppStore s = await fresh();
+      s.startContraction(now: 1000);
+      s.stopContraction(now: 61000);
+      final void Function()? undo = s.startContraction(now: 61000 + 2 * 3600000);
+      expect(undo, isNotNull);
+      expect(s.data.seriesStarts, <int>[61000 + 2 * 3600000]);
+      undo!();
+      expect(s.data.seriesStarts, isEmpty);
+      expect(s.data.running, isNot(0));
+    });
+
+    test('starting a new series by hand', () async {
+      final AppStore s = await fresh();
+      s.startContraction(now: 1000);
+      s.stopContraction(now: 61000);
+      expect(s.startNewSeries(now: 120000), isNotNull);
+      expect(s.hasSeriesBreakAfterLast, isTrue);
+      expect(s.startNewSeries(now: 130000), isNull);
+      expect(currentSeries(sortedContractions(s.data.contractions), s.data.seriesStarts), isEmpty);
+      // A short pause does not start a new series by itself.
+      expect(s.startContraction(now: 180000), isNull);
     });
 
     test('movement sessions can be edited and deleted', () async {

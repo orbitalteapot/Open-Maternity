@@ -5,6 +5,9 @@ import 'dart:math';
 
 const int dataVersion = 1;
 
+/// After this long without a contraction, starting the timer begins a new series.
+const int autoSeriesGapMs = 2 * 60 * 60 * 1000;
+
 /// The numbers a user can save. Nothing is ever pre-filled.
 const List<String> numberRoles = <String>['ward', 'midwife', 'centre', 'doctor', 'emergency', 'support'];
 
@@ -270,6 +273,7 @@ class AppData {
     Map<String, String>? numbers,
     this.supportName = '',
     this.contractions = const <Contraction>[],
+    this.seriesStarts = const <int>[],
     this.running = 0,
     this.move,
     this.moves = const <MoveSession>[],
@@ -289,6 +293,9 @@ class AppData {
   Map<String, String> numbers;
   String supportName;
   List<Contraction> contractions;
+
+  /// Times where the user (or the 2-hour rule) started a new series of contractions.
+  List<int> seriesStarts;
   int running; // start time of a running contraction, or 0
   RunningMoves? move;
   List<MoveSession> moves;
@@ -311,6 +318,7 @@ class AppData {
         'numbers': Map<String, String>.from(numbers),
         'supportName': supportName,
         'contractions': contractions.map((Contraction c) => c.toJson()).toList(),
+        'seriesStarts': (List<int>.of(seriesStarts)..sort()),
         'running': running,
         'move': move?.toJson(),
         'moves': moves.map((MoveSession m) => m.toJson()).toList(),
@@ -347,6 +355,26 @@ class AppData {
     final String lang = _str(m['lang'], 'en');
     final String theme = _str(m['themePref'], 'phone');
     final String due = _str(m['due']);
+    final List<Contraction> contractions = _items(m['contractions'], Contraction.fromJson);
+    final List<int> seriesStarts = <int>[];
+    if (m.containsKey('seriesStarts')) {
+      for (final Object? v in _list(m['seriesStarts'])) {
+        final int t = _int(v);
+        if (t > 0) {
+          seriesStarts.add(t);
+        }
+      }
+    } else {
+      // Data from before series existed: split where two hours or more passed.
+      final List<Contraction> sorted = List<Contraction>.of(contractions)
+        ..sort((Contraction a, Contraction b) => a.start.compareTo(b.start));
+      for (int i = 1; i < sorted.length; i++) {
+        if (sorted[i].start - sorted[i - 1].end >= autoSeriesGapMs) {
+          seriesStarts.add(sorted[i].start);
+        }
+      }
+    }
+    seriesStarts.sort();
     return AppData(
       onboarded: _bool(m['onboarded']),
       lang: lang,
@@ -355,7 +383,8 @@ class AppData {
       due: isIsoDate(due) ? due : '',
       numbers: numbers,
       supportName: _str(m['supportName']).trim(),
-      contractions: _items(m['contractions'], Contraction.fromJson),
+      contractions: contractions,
+      seriesStarts: seriesStarts,
       running: max(0, _int(m['running'])),
       move: RunningMoves.fromJson(m['move']),
       moves: _items(m['moves'], MoveSession.fromJson),

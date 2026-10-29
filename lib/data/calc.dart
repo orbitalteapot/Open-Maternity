@@ -21,6 +21,9 @@ String clockOf(DateTime d) => '${pad2(d.hour)}:${pad2(d.minute)}';
 
 String clockOfMs(int ms) => clockOf(DateTime.fromMillisecondsSinceEpoch(ms));
 
+/// 13:58:07
+String clockWithSeconds(DateTime d) => '${pad2(d.hour)}:${pad2(d.minute)}:${pad2(d.second)}';
+
 String isoDate(DateTime d) => '${d.year}-${pad2(d.month)}-${pad2(d.day)}';
 
 DateTime? parseIsoDate(String s) {
@@ -112,26 +115,51 @@ List<Contraction> sortedContractions(List<Contraction> list) {
   return List<Contraction>.of(list)..sort((Contraction a, Contraction b) => a.start.compareTo(b.start));
 }
 
-/// Contractions more than an hour apart belong to different runs (another day,
-/// false labour). Intervals across that gap are not shown or averaged.
-const int runGapMs = 60 * 60 * 1000;
+/// Splits contractions (sorted by start) into series. A new series begins at
+/// every time in [seriesStarts] that falls after one contraction and at or
+/// before the next.
+List<List<Contraction>> splitSeries(List<Contraction> sorted, List<int> seriesStarts) {
+  final List<List<Contraction>> out = <List<Contraction>>[];
+  if (sorted.isEmpty) {
+    return out;
+  }
+  final List<int> marks = List<int>.of(seriesStarts)..sort();
+  List<Contraction> current = <Contraction>[sorted.first];
+  for (int i = 1; i < sorted.length; i++) {
+    final int prev = sorted[i - 1].start;
+    final int cur = sorted[i].start;
+    if (marks.any((int t) => t > prev && t <= cur)) {
+      out.add(current);
+      current = <Contraction>[];
+    }
+    current.add(sorted[i]);
+  }
+  out.add(current);
+  return out;
+}
 
-/// The latest run: the newest contractions with less than an hour between starts.
-List<Contraction> currentRun(List<Contraction> sorted) {
+/// The series new contractions are added to. Empty when the user has just
+/// started a new series and not timed anything in it yet.
+List<Contraction> currentSeries(List<Contraction> sorted, List<int> seriesStarts) {
   if (sorted.isEmpty) {
     return const <Contraction>[];
   }
-  int first = sorted.length - 1;
-  while (first > 0 && sorted[first].start - sorted[first - 1].start <= runGapMs) {
-    first--;
+  final int lastMark = seriesStarts.isEmpty ? 0 : seriesStarts.reduce(max);
+  if (lastMark > sorted.last.start) {
+    return const <Contraction>[];
   }
-  return sorted.sublist(first);
+  return splitSeries(sorted, seriesStarts).last;
 }
 
-ContractionStats contractionStats(List<Contraction> list, int nowMs) {
+ContractionStats contractionStats(List<Contraction> list, int nowMs, {List<int> seriesStarts = const <int>[]}) {
   final List<Contraction> sorted = sortedContractions(list);
-  final List<Contraction> run = currentRun(sorted);
-  final List<Contraction> last = run.length > 6 ? run.sublist(run.length - 6) : run;
+  final List<Contraction> run = currentSeries(sorted, seriesStarts);
+  return statsOf(run, inLastHour: sorted.where((Contraction c) => c.start >= nowMs - 3600000).length);
+}
+
+/// Averages over the last six contractions of [series] (sorted by start).
+ContractionStats statsOf(List<Contraction> series, {int inLastHour = 0}) {
+  final List<Contraction> last = series.length > 6 ? series.sublist(series.length - 6) : series;
   double avgDur = 0;
   if (last.isNotEmpty) {
     avgDur = last.fold<int>(0, (int sum, Contraction c) => sum + c.durationMs) / last.length / 1000;
@@ -144,21 +172,63 @@ ContractionStats contractionStats(List<Contraction> list, int nowMs) {
     }
     avgGap = total / (last.length - 1) / 1000;
   }
-  final int inHour = sorted.where((Contraction c) => c.start >= nowMs - 3600000).length;
-  return ContractionStats(sample: last.length, avgDurationSec: avgDur, avgIntervalSec: avgGap, inLastHour: inHour);
+  return ContractionStats(sample: last.length, avgDurationSec: avgDur, avgIntervalSec: avgGap, inLastHour: inLastHour);
 }
 
 /// Seconds since the previous contraction started, or null for the first one
-/// of a run (none before it, or more than an hour since the previous one).
-double? intervalBefore(List<Contraction> sorted, int index) {
+/// of a series.
+double? intervalBefore(List<Contraction> sorted, int index, {List<int> seriesStarts = const <int>[]}) {
   if (index <= 0 || index >= sorted.length) {
     return null;
   }
-  final int gap = sorted[index].start - sorted[index - 1].start;
-  if (gap > runGapMs) {
+  final int prev = sorted[index - 1].start;
+  final int cur = sorted[index].start;
+  if (seriesStarts.any((int t) => t > prev && t <= cur)) {
     return null;
   }
-  return gap / 1000;
+  return (cur - prev) / 1000;
+}
+
+/// Straight line through points by least squares: y = intercept + slope * x.
+class TrendLine {
+  const TrendLine(this.slope, this.intercept);
+  final double slope;
+  final double intercept;
+
+  double at(double x) => intercept + slope * x;
+}
+
+/// Needs at least three points with different x.
+TrendLine? trendLine(List<double> xs, List<double> ys) {
+  final int n = xs.length;
+  if (n < 3 || ys.length != n) {
+    return null;
+  }
+  final double mx = xs.reduce((double a, double b) => a + b) / n;
+  final double my = ys.reduce((double a, double b) => a + b) / n;
+  double sxx = 0;
+  double sxy = 0;
+  for (int i = 0; i < n; i++) {
+    sxx += (xs[i] - mx) * (xs[i] - mx);
+    sxy += (xs[i] - mx) * (ys[i] - my);
+  }
+  if (sxx == 0) {
+    return null;
+  }
+  final double slope = sxy / sxx;
+  return TrendLine(slope, my - slope * mx);
+}
+
+/// A "nice" step for about [ticks] axis lines between 0 and [maxValue].
+double niceStep(double maxValue, {int ticks = 4}) {
+  if (maxValue <= 0) {
+    return 1;
+  }
+  final double raw = maxValue / ticks;
+  final double mag = pow(10, (log(raw) / ln10).floor()).toDouble();
+  final double norm = raw / mag;
+  final double nice = norm <= 1 ? 1 : (norm <= 2 ? 2 : (norm <= 2.5 ? 2.5 : (norm <= 5 ? 5 : 10)));
+  return nice * mag;
 }
 
 /// Puts a clock time picked by the user on the day (yesterday, same day or

@@ -9,6 +9,7 @@ import '../../l10n/strings.dart';
 import '../../services/summary_pdf.dart';
 import '../../theme/tokens.dart';
 import '../actions.dart';
+import '../chart_cards.dart';
 import '../scope.dart';
 import '../sheets/sheets.dart';
 import '../widgets.dart';
@@ -559,7 +560,7 @@ class _HistoryTabState extends State<HistoryTab> {
     final List<Contraction> cs = sortedContractions(d.contractions);
     final List<_Event> events = <_Event>[];
     for (int i = 0; i < cs.length; i++) {
-      final double? gap = intervalBefore(cs, i);
+      final double? gap = intervalBefore(cs, i, seriesStarts: d.seriesStarts);
       final String sub = t('c_long', <String, Object?>{'d': formatDuration(cs[i].durationMs / 1000)}) +
           (gap == null ? '' : ' · ${t('c_after', <String, Object?>{'d': formatDuration(gap)})}');
       events.add(_Event(at: cs[i].start, type: 'contractions', icon: Icons.timer_rounded, tone: Tone.clay, title: t('h_contraction'), sub: sub, contraction: cs[i]));
@@ -586,8 +587,6 @@ class _HistoryTabState extends State<HistoryTab> {
       days.last.$2.add(e);
     }
 
-    final List<Contraction> hour = cs.where((Contraction x) => x.start >= nowMs - 3600000).toList();
-    final List<Contraction> chartList = hour.length > 8 ? hour.sublist(hour.length - 8) : hour;
 
     return PageBody(
       children: <Widget>[
@@ -616,7 +615,8 @@ class _HistoryTabState extends State<HistoryTab> {
               OmChip(label: t(key), selected: _filter == id, onTap: () => setState(() => _filter = id)),
           ],
         ),
-        if ((_filter == 'all' || _filter == 'contractions') && chartList.length >= 2) _HourChart(all: cs, list: chartList),
+        if ((_filter == 'all' || _filter == 'contractions') && ContractionChartCard.hasData(d)) const ContractionChartCard(),
+        if ((_filter == 'all' || _filter == 'movements') && MovementChartCard.hasData(d)) const MovementChartCard(),
         if (shown.isEmpty) EmptyState(icon: Icons.history_rounded, title: t('h_empty'), body: t('h_empty_sub')),
         for (final (String label, List<_Event> list) in days) ...<Widget>[
           SectionLabel(label),
@@ -677,137 +677,6 @@ class _EventRow extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Bars for the last hour: how long each contraction lasted and the time since the one before.
-class _HourChart extends StatelessWidget {
-  const _HourChart({required this.all, required this.list});
-
-  final List<Contraction> all;
-  final List<Contraction> list;
-
-  @override
-  Widget build(BuildContext context) {
-    final S t = context.t;
-    final OmColors c = context.om;
-    double sumDur = 0;
-    double sumGap = 0;
-    int gaps = 0;
-    final List<(double, double)> bars = <(double, double)>[];
-    for (final Contraction x in list) {
-      final int k = all.indexOf(x);
-      final double? gap = intervalBefore(all, k);
-      sumDur += x.durationMs / 1000;
-      if (gap != null) {
-        sumGap += gap;
-        gaps++;
-      }
-      bars.add((((x.durationMs / 1000) / 480).clamp(0.0, 1.0), ((gap ?? 0) / 480).clamp(0.0, 1.0)));
-    }
-    final double avgDur = sumDur / list.length;
-    final double avgGap = gaps == 0 ? 0 : sumGap / gaps;
-    final String summary = t('h_summary', <String, Object?>{
-      'a': '${(avgGap / 60).round().clamp(1, 600)} min',
-      'd': '${avgDur.round()} s',
-    });
-    final TextStyle axis = OmText.caption.copyWith(color: c.inkMuted);
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: c.surfaceRaised,
-        borderRadius: BorderRadius.circular(OmSize.radiusLg),
-        border: Border.all(color: c.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 12,
-        children: <Widget>[
-          Text(t('h_last_hour'), style: OmText.title.copyWith(color: c.ink)),
-          Text(summary, style: OmText.body.copyWith(color: c.ink)),
-          ExcludeSemantics(
-            child: SizedBox(
-              height: 136,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  SizedBox(
-                    width: 44,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: <Widget>[Text('8 min', style: axis), Text('4', style: axis), Text('0', style: axis)],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.only(top: 10),
-                      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.lineStrong))),
-                      child: LayoutBuilder(
-                        builder: (BuildContext ctx, BoxConstraints box) {
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            spacing: 6,
-                            children: <Widget>[
-                              for (final (double dur, double gap) in bars)
-                                Expanded(
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    spacing: 2,
-                                    children: <Widget>[
-                                      Expanded(child: _bar(c.chart1, box.maxHeight * dur)),
-                                      Expanded(child: _bar(c.chart2, box.maxHeight * gap)),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          ExcludeSemantics(
-            child: Row(
-              children: <Widget>[
-                const SizedBox(width: 52),
-                Expanded(child: Text(clockOfMs(list.first.start), style: axis)),
-                Text(clockOfMs(list.last.start), style: axis),
-              ],
-            ),
-          ),
-          Wrap(
-            spacing: 16,
-            children: <Widget>[
-              _key(c.chart1, t('c_lasting'), axis),
-              _key(c.chart2, t('c_apart'), axis),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _bar(Color color, double height) {
-    return Container(
-      height: height < 2 ? 2 : height,
-      decoration: BoxDecoration(color: color, borderRadius: const BorderRadius.vertical(top: Radius.circular(4))),
-    );
-  }
-
-  Widget _key(Color color, String label, TextStyle style) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Container(width: 12, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
-        const SizedBox(width: 6),
-        Text(label, style: style),
-      ],
     );
   }
 }

@@ -191,12 +191,46 @@ class AppStore extends ChangeNotifier {
 
   // ---------------------------------------------------------------- contractions
 
-  void startContraction({int? now}) {
+  /// Starts timing. After two hours or more without contractions this also
+  /// begins a new series, and returns an undo that joins it to the previous one.
+  VoidCallback? startContraction({int? now}) {
     if (data.running != 0) {
-      return;
+      return null;
     }
-    data.running = now ?? _nowMs();
+    final int at = now ?? _nowMs();
+    VoidCallback? undoSeries;
+    final List<Contraction> sorted = sortedContractions(data.contractions);
+    if (sorted.isNotEmpty && at - sorted.last.end >= autoSeriesGapMs && !hasSeriesBreakAfterLast) {
+      data.seriesStarts = <int>[...data.seriesStarts, at];
+      undoSeries = _undo(() {
+        data.seriesStarts = data.seriesStarts.where((int t) => t != at).toList();
+      });
+    }
+    data.running = at;
     _changed();
+    return undoSeries;
+  }
+
+  /// True when a new series has been started after the last contraction.
+  bool get hasSeriesBreakAfterLast {
+    if (data.contractions.isEmpty) {
+      return false;
+    }
+    final int last = data.contractions.map((Contraction c) => c.start).reduce(max);
+    return data.seriesStarts.any((int t) => t > last);
+  }
+
+  /// Begins a new series: averages and charts start again from the next contraction.
+  VoidCallback? startNewSeries({int? now}) {
+    if (data.contractions.isEmpty || hasSeriesBreakAfterLast) {
+      return null;
+    }
+    final int at = max(now ?? _nowMs(), data.contractions.map((Contraction c) => c.start).reduce(max) + 1);
+    data.seriesStarts = <int>[...data.seriesStarts, at];
+    _changed();
+    return _undo(() {
+      data.seriesStarts = data.seriesStarts.where((int t) => t != at).toList();
+    });
   }
 
   /// Stops the running contraction and returns an undo that restarts it.
