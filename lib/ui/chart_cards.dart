@@ -163,8 +163,10 @@ class _ContractionChartCardState extends State<ContractionChartCard> {
       'a': formatDuration(stats.avgIntervalSec),
       'd': formatDuration(stats.avgDurationSec),
     });
+    final bool today = startOfDay(series.first.start) == startOfDay(DateTime.now().millisecondsSinceEpoch);
+    final String from = today ? clockOf(first) : '${f.weekdayShort(first)} ${clockOf(first)}';
     final String seriesLabel =
-        '${t('c_series_from', <String, Object?>{'t': '${f.dayLabel(series.first.start)} ${clockOf(first)}'})} · '
+        '${t('c_series_from', <String, Object?>{'t': from})} · '
         '${t('c_series_count', <String, Object?>{'n': series.length})}';
 
     return _cardFrame(context, <Widget>[
