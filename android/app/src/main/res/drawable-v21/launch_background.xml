@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Shown while the app starts on Android 11 and older (newer versions show the app icon). -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@color/launch_background" />
+    <item android:drawable="@drawable/launch_mark" android:gravity="center" android:width="96dp" android:height="96dp" />
 </layer-list>

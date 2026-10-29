@@ -46,3 +46,6 @@ android/key.properties
 *.p12
 *.p8
 *.mobileprovision
+
+# Store screenshots are rendered by CI (tool/screenshots)
+tool/screenshots/out/

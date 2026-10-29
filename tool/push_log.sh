@@ -8,6 +8,7 @@ shift
 tmp="$(mktemp -d)"
 for f in "$@"; do
   if [ -f "$f" ]; then cp "$f" "$tmp/"; fi
+  if [ -d "$f" ]; then cp -r "$f" "$tmp/"; fi
 done
 {
   echo "status: ${JOB_STATUS:-unknown}"

@@ -158,10 +158,22 @@ def android():
           '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n'
           '    <color name="launch_background">#1C1714</color>\n</resources>\n')
     launch = ('<?xml version="1.0" encoding="utf-8"?>\n'
+              '<!-- Shown while the app starts on Android 11 and older (newer versions show the app icon). -->\n'
               '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">\n'
-              '    <item android:drawable="@color/launch_background" />\n</layer-list>\n')
+              '    <item android:drawable="@color/launch_background" />\n'
+              '    <item android:drawable="@drawable/launch_mark" android:gravity="center" android:width="96dp" android:height="96dp" />\n'
+              '</layer-list>\n')
     write(res / 'drawable' / 'launch_background.xml', launch)
     write(res / 'drawable-v21' / 'launch_background.xml', launch)
+    launch_mark = ('<?xml version="1.0" encoding="utf-8"?>\n'
+                   '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
+                   '    android:width="96dp" android:height="96dp" android:viewportWidth="704" android:viewportHeight="704">\n'
+                   '    <path android:fillColor="{circle}" android:pathData="M212,238 a140,140 0 1,0 280,0 a140,140 0 1,0 -280,0 Z" />\n'
+                   '    <path android:strokeColor="{arc}" android:strokeWidth="96" android:strokeLineCap="round"\n'
+                   '        android:pathData="M92,298 A260,260 0 0,0 612,298" />\n'
+                   '</vector>\n')
+    write(res / 'drawable' / 'launch_mark.xml', launch_mark.format(circle='#B97D22', arc='#A8502F'))
+    write(res / 'drawable-night' / 'launch_mark.xml', launch_mark.format(circle='#E0B062', arc='#E89A78'))
 
     # Launcher icon: PNGs for old Android, an adaptive icon (with themed monochrome layer) for 8.0+.
     for density in ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']:
@@ -253,6 +265,9 @@ def ios():
     icons = runner / 'Assets.xcassets' / 'AppIcon.appiconset'
     for png in (ICONS / 'ios').glob('*.png'):
         shutil.copyfile(png, icons / png.name)
+    launch_images = runner / 'Assets.xcassets' / 'LaunchImage.imageset'
+    for png in (ICONS / 'ios-launch').glob('*.png'):
+        shutil.copyfile(png, launch_images / png.name)
     print('ios: done')
 
 

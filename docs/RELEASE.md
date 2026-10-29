@@ -11,6 +11,17 @@ Everything builds in GitHub Actions, so you don't need a Mac. Store builds start
 - [ ] **Test on real phones**: the test APK from the *test-build* release, and TestFlight on iPhone.
 - [ ] **Screenshots**: phone screenshots in each language you list. Play needs at least 2; the App Store needs 6.9-inch iPhone screenshots.
 
+## Store graphics
+
+| What | Where |
+| --- | --- |
+| Play Store icon (512 × 512) | `tool/icons/store/play-icon-512.png` |
+| Play Store feature graphic (1024 × 500) | `tool/icons/store/play-feature-1024x500.png` |
+| App Store icon (1024 × 1024) | built into the app (`ios/Runner/Assets.xcassets/AppIcon.appiconset`) |
+| Screenshots, all four languages | made by CI on every push to `main`: the `store-screenshots` branch, or the run's *store-screenshots* download. `play/` is 1080 × 2160, `appstore/` is 1290 × 2796 (6.9-inch iPhone) |
+
+To make the screenshots on your own computer: `flutter test --update-goldens tool/screenshots`.
+
 ## Version numbers
 
 `version:` in `pubspec.yaml` (and `lib/version.dart`, which a test keeps in sync) is the version people see. The build number comes from the GitHub run number, so it always goes up.
