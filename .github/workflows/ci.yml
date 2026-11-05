@@ -28,7 +28,7 @@ jobs:
     name: Analyze and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -52,7 +52,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -62,7 +62,7 @@ jobs:
         run: flutter pub get 2>&1 | tee -a ci-log.txt
       - name: Render screenshots in all languages
         run: flutter test --update-goldens tool/screenshots 2>&1 | tee -a ci-log.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: store-screenshots-${{ github.run_number }}
           path: tool/screenshots/out
@@ -77,12 +77,12 @@ jobs:
     name: Android build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check platform folders
         id: ready
         run: |
           if [ -f android/app/build.gradle.kts ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; else echo "::notice::android/ is not set up yet; the setup workflow adds it."; fi
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         if: steps.ready.outputs.ok == 'true'
         with:
           distribution: temurin
@@ -104,7 +104,7 @@ jobs:
       - name: Build Play Store bundle
         if: steps.ready.outputs.ok == 'true'
         run: flutter build appbundle --release --build-number=${{ github.run_number }} 2>&1 | tee -a ci-log.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: steps.ready.outputs.ok == 'true'
         with:
           name: android-${{ github.run_number }}
@@ -115,8 +115,6 @@ jobs:
         if: steps.ready.outputs.ok == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JOB_STATUS: success
         run: |
           gh release delete test-build --yes --cleanup-tag || true
           gh release create test-build open-maternity-test.apk \
@@ -124,7 +122,6 @@ jobs:
             --target "${GITHUB_SHA}" \
             --title "Test build ${GITHUB_RUN_NUMBER}" \
             --notes "Android test build from ${GITHUB_SHA::7}. Download open-maternity-test.apk on your Android phone and open it to install (allow installing from this source when asked). Settings has an extra 'For testing' section with sample data. Not for the store."
-          bash tool/push_log.sh test-apk open-maternity-test.apk
       - name: Save log
         if: always() && github.event_name != 'pull_request'
         env:
@@ -136,7 +133,7 @@ jobs:
     name: iOS build
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check platform folders
         id: ready
         run: |
@@ -156,7 +153,7 @@ jobs:
           xcodebuild -version | tee -a ci-log.txt
           flutter build ios --release --no-codesign --build-number=${{ github.run_number }} 2>&1 | tee -a ci-log.txt
           cd build/ios/iphoneos && zip -qr ../../../open-maternity-ios-unsigned.zip Runner.app
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         if: steps.ready.outputs.ok == 'true'
         with:
           name: ios-unsigned-${{ github.run_number }}
