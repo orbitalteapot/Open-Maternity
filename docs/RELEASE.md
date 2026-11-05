@@ -1,10 +1,12 @@
 # Releasing Open Maternity
 
-Everything builds in GitHub Actions, so you don't need a Mac. Store builds start when you push a tag such as `v1.0.0`, or when you run the **Release** workflow by hand. Each platform is skipped, with a note in the run, until its secrets are added.
+Everything builds in GitHub Actions, so you don't need a Mac. Store builds start when you push a tag such as `v1.0.0`, or when you run the **Release** workflow by hand (**Actions → Release → Run workflow**). The workflow runs the tests first, then builds and checks each platform. A platform is skipped until its secrets are added; the run's summary page says which secrets are missing.
+
+**Dry run:** run the workflow by hand with *Dry run* ticked. It builds Android with a throwaway key and checks the iOS signing setup without Apple keys, and uploads nothing. Use it after changing the workflow or the platform folders.
 
 ## Before the first release
 
-- [ ] **Choose the final app ID.** `no.openmaternity.app` is a placeholder. It is used in `android/app/build.gradle.kts` (`applicationId`), in `ios/Runner.xcodeproj/project.pbxproj` (`PRODUCT_BUNDLE_IDENTIFIER`, 3 places), and in `.github/workflows/release.yml` and `tool/ios_signing.py`. It can never change after the first upload. Use a domain you control, reversed.
+- [ ] **Choose the final app ID.** `no.openmaternity.app` is a placeholder. Use a domain you control, reversed, and set it with `python3 tool/set_app_id.py com.example.openmaternity` (it changes Android and iOS; the release workflow reads it from there). It can never change after the first upload.
 - [ ] **Check the name.** Search the stores and trademark registers for "Open Maternity".
 - [ ] **Native-speaker review** of `lib/l10n/strings_nb.dart`, `strings_sv.dart`, `strings_da.dart` and the store texts in `docs/STORE_LISTING.md`.
 - [ ] **Publish the privacy policy.** Make the repository public (or turn on GitHub Pages) so `docs/PRIVACY.md` has a public URL.
@@ -24,7 +26,9 @@ To make the screenshots on your own computer: `flutter test --update-goldens too
 
 ## Version numbers
 
-`version:` in `pubspec.yaml` (and `lib/version.dart`, which a test keeps in sync) is the version people see. The build number comes from the GitHub run number, so it always goes up.
+`version:` in `pubspec.yaml` (and `lib/version.dart`, which a test keeps in sync) is the version people see. The tag must be the same version with a `v` in front, or the release stops before building. The build number comes from the Release workflow's run number, so it always goes up.
+
+To release 1.0.1: set `version: 1.0.1+1` in `pubspec.yaml` and `'1.0.1'` in `lib/version.dart`, commit, then `git tag v1.0.1 && git push origin v1.0.1`.
 
 ## Android: Google Play
 
@@ -44,10 +48,10 @@ To make the screenshots on your own computer: `flutter test --update-goldens too
    | --- | --- |
    | `ANDROID_KEYSTORE_BASE64` | contents of `keystore.txt` |
    | `ANDROID_KEYSTORE_PASSWORD` | the keystore password |
-   | `ANDROID_KEY_ALIAS` | `upload` |
-   | `ANDROID_KEY_PASSWORD` | the key password |
+   | `ANDROID_KEY_ALIAS` | `upload` (can be left out when the keystore has one key) |
+   | `ANDROID_KEY_PASSWORD` | the key password (can be left out: keystores made with the command above use the keystore password) |
 
-5. Push a tag (`git tag v1.0.0 && git push origin v1.0.0`) or run **Actions → Release → Run workflow**. Download `open-maternity.aab` from the run (or the GitHub release) and upload it in Play Console. Use **Play App Signing** when asked.
+5. Push a tag (`git tag v1.0.0 && git push origin v1.0.0`) or run **Actions → Release → Run workflow**. The run checks the keystore, alias and passwords before building, and afterwards checks that the AAB and APK are signed with your key and have no internet permission. Download `open-maternity.aab` from the run (or the GitHub release) and upload it in Play Console. Use **Play App Signing** when asked.
 6. Optional, for automatic uploads to the internal testing track: create a Google Cloud service account with access to your Play Console app and add its JSON key as `PLAY_SERVICE_ACCOUNT_JSON`. The app must already exist in Play Console, with one AAB uploaded by hand.
 7. Fill in **App content** using `docs/STORE_LISTING.md`: privacy policy, Data safety (no data collected), Health apps, ads (none), target audience (18+), content rating.
 
@@ -81,7 +85,7 @@ You need the Apple Developer Program (yearly fee). Organisations need a D-U-N-S 
    | `APP_STORE_CONNECT_ISSUER_ID` | Issuer ID |
    | `APP_STORE_CONNECT_API_KEY_P8_BASE64` | the `.p8` file, base64 |
 
-7. Run the Release workflow. The build goes to **TestFlight**. Install TestFlight on your iPhone to test, then submit for review from App Store Connect. Use the review notes, privacy answers and age rating in `docs/STORE_LISTING.md`.
+7. Run the Release workflow. Before building, it checks that the profile is an App Store profile for this app ID and team, has not expired, and includes your certificate; the error says what to fix if not. The build goes to **TestFlight**. Install TestFlight on your iPhone to test, then submit for review from App Store Connect. Use the review notes, privacy answers and age rating in `docs/STORE_LISTING.md`.
 
 ## What the app may never do
 

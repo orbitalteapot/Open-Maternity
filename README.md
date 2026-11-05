@@ -1,4 +1,6 @@
-# Open Maternity
+<h1 align="center">
+  <img src="tool/icons/store/play-feature-1024x500.png" alt="Open Maternity" width="560">
+</h1>
 
 A free, calm toolkit for pregnancy: contraction timer, movement counter, hospital-bag checklist, appointments, medicine reminders and a weight log. In English, Norwegian (bokmål), Swedish and Danish.
 
@@ -8,9 +10,30 @@ A free, calm toolkit for pregnancy: contraction timer, movement counter, hospita
 - **No built-in phone numbers.** The user adds the numbers she needs (maternity ward, midwife, …) and calls with one tap.
 - **No medical advice.** The app shows what was logged. It does not tell anyone when to go to hospital; the "Call the maternity ward" button is always on the timer screens instead.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/today.png" width="170" alt="Today screen: pregnancy week 36 with days to go, shortcuts to the contraction timer and movements, the next appointment and the hospital bag"><br><sub>Today</sub></td>
+    <td align="center"><img src="docs/images/contractions.png" width="170" alt="Contraction timer: time apart, length, contractions per 10 minutes and in the last hour, a large Start button and a button to call the maternity ward"><br><sub>Contraction timer</sub></td>
+    <td align="center"><img src="docs/images/movements.png" width="170" alt="Movement counter: a large I felt a movement button, the count for this session and earlier sessions"><br><sub>Movements</sub></td>
+    <td align="center"><img src="docs/images/history.png" width="170" alt="History: a chart of the time between contractions in one series, with a dashed trend line and the trend in words"><br><sub>History with trend chart</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/tools.png" width="170" alt="Tools: contraction timer, movements, hospital bag, appointments, medicines and weight"><br><sub>Tools</sub></td>
+    <td align="center"><img src="docs/images/bag.png" width="170" alt="Hospital bag checklist with packed items ticked"><br><sub>Hospital bag</sub></td>
+    <td align="center"><img src="docs/images/numbers.png" width="170" alt="My numbers: phone numbers the user added herself, with call buttons"><br><sub>My numbers</sub></td>
+    <td align="center"><img src="docs/images/today-nb.png" width="170" alt="The Today screen in Norwegian"><br><sub>Norsk (bokmål)</sub></td>
+  </tr>
+</table>
+
+The app also has a dark theme and a dimmed night theme for the timer screens. The images come from the store screenshots that CI makes on every push (see `tool/readme_images.py`).
+
 ## Try it
 
 Every push to `main` builds an Android test APK. Download `open-maternity-test.apk` from the **test-build** release on the Releases page and open it on an Android phone. Test builds have an extra *For testing* section in Settings with sample data.
+
+Store versions are released from tags such as `v1.0.0`; their Releases page entry has the signed `open-maternity.apk`.
 
 ## Build it yourself
 
@@ -33,8 +56,8 @@ flutter build ios --release      # iOS (on a Mac)
 | `lib/theme/` | Design tokens from the Open Maternity design system (colours checked for WCAG AA in light, dark and night) |
 | `lib/ui/` | Screens, sheets and shared widgets |
 | `lib/services/` | Reminders (local notifications), dialler, backup file, PDF summary |
-| `tool/` | Platform setup, icons and CI helpers |
-| `docs/` | Privacy policy, store texts and the release checklist |
+| `tool/` | Platform setup, icons, store screenshots and release helpers |
+| `docs/` | Privacy policy, store texts, the release checklist and the README images |
 
 ## Contributing translations
 
@@ -42,4 +65,4 @@ Text lives in `lib/l10n/strings_<lang>.dart`. The tests check that every languag
 
 ## Releasing
 
-See [docs/RELEASE.md](docs/RELEASE.md).
+Set the version in `pubspec.yaml` and `lib/version.dart`, then push a tag with the same version (`v1.0.0`). The **Release** workflow tests the app, builds signed store versions for Google Play and the App Store, and uploads them when the keys are set up. Run it by hand with *Dry run* ticked to check everything without keys. The one-time setup is in [docs/RELEASE.md](docs/RELEASE.md).
