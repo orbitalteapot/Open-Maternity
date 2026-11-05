@@ -148,7 +148,7 @@ jobs:
             exit 1
           fi
           sha=$(keytool -list -v -keystore "$ks" -storepass:env STORE_PASSWORD -alias "$KEY_ALIAS" \
-            | sed -n '/SHA256:/{s/^.*SHA256: *//p;q;}' | tr -d ':' | tr 'A-F' 'a-f')
+            | awk '/SHA256:/ && !done { sub(/.*SHA256: */, ""); print; done = 1 }' | tr -d ':' | tr 'A-F' 'a-f')
           echo "KEY_SHA256=$sha" >> "$GITHUB_ENV"
           KS="$ks" KEY_ALIAS="$KEY_ALIAS" KEY_PASSWORD="$KEY_PASSWORD" python3 - <<'EOF'
           import os
@@ -181,8 +181,8 @@ jobs:
           tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
           apk_certs=$("$tools/apksigner" verify --print-certs dist/open-maternity.apk)
           echo "$apk_certs"
-          apk_sha=$(sed -n '/certificate SHA-256 digest:/{s/^.*certificate SHA-256 digest: *//p;q;}' <<< "$apk_certs")
-          aab_sha=$(keytool -printcert -jarfile dist/open-maternity.aab | sed -n '/SHA256:/{s/^.*SHA256: *//p;q;}' | tr -d ':' | tr 'A-F' 'a-f')
+          apk_sha=$(awk '/certificate SHA-256 digest:/ && !done { sub(/.*certificate SHA-256 digest: */, ""); print; done = 1 }' <<< "$apk_certs")
+          aab_sha=$(keytool -printcert -jarfile dist/open-maternity.aab | awk '/SHA256:/ && !done { sub(/.*SHA256: */, ""); print; done = 1 }' | tr -d ':' | tr 'A-F' 'a-f')
           if [ "$apk_sha" != "$KEY_SHA256" ] || [ "$aab_sha" != "$KEY_SHA256" ]; then
             echo "::error::The builds are not signed with the upload key (APK $apk_sha, AAB $aab_sha, key $KEY_SHA256)."
             exit 1
