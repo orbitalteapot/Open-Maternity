@@ -179,7 +179,9 @@ jobs:
         if: steps.mode.outputs.mode != 'skip'
         run: |
           tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          apk_sha=$("$tools/apksigner" verify --print-certs dist/open-maternity.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: *//p')
+          apk_certs=$("$tools/apksigner" verify --print-certs dist/open-maternity.apk)
+          echo "$apk_certs"
+          apk_sha=$(sed -n '/certificate SHA-256 digest:/{s/^.*certificate SHA-256 digest: *//p;q;}' <<< "$apk_certs")
           aab_sha=$(keytool -printcert -jarfile dist/open-maternity.aab | sed -n '/SHA256:/{s/^.*SHA256: *//p;q;}' | tr -d ':' | tr 'A-F' 'a-f')
           if [ "$apk_sha" != "$KEY_SHA256" ] || [ "$aab_sha" != "$KEY_SHA256" ]; then
             echo "::error::The builds are not signed with the upload key (APK $apk_sha, AAB $aab_sha, key $KEY_SHA256)."
