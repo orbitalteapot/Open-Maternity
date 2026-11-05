@@ -1,12 +1,11 @@
 name: Set up Android and iOS folders
 
-# Runs once: generates android/ and ios/ with Flutter's own templates, applies
-# Open Maternity's settings (tool/setup_platforms.py), commits them, and starts CI.
-# On later pushes it sees the folders exist and stops after a few seconds.
+# Generates android/ and ios/ with Flutter's own templates, applies Open
+# Maternity's settings (tool/setup_platforms.py), commits them, and starts CI.
+# The folders are in the repository now, so this only runs by hand (Actions →
+# Set up Android and iOS folders), after deleting both folders to regenerate them.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -34,11 +33,11 @@ jobs:
       - name: Generate and configure
         if: steps.check.outputs.done != 'true'
         run: |
-          flutter create --org no.openmaternity --project-name open_maternity --platforms android,ios . 2>&1 | tee setup-log.txt
+          flutter create --org no.openmaternity --project-name open_maternity --platforms android,ios .
           rm -f test/widget_test.dart
-          python3 tool/setup_platforms.py 2>&1 | tee -a setup-log.txt
-          flutter pub get 2>&1 | tee -a setup-log.txt
-          git status --short | tee -a setup-log.txt
+          python3 tool/setup_platforms.py
+          flutter pub get
+          git status --short
       - name: Commit
         if: steps.check.outputs.done != 'true'
         run: |
@@ -52,9 +51,3 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh workflow run ci.yml --ref main
-      - name: Save log
-        if: always() && steps.check.outputs.done != 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JOB_STATUS: ${{ job.status }}
-        run: bash tool/push_log.sh ci-logs-setup setup-log.txt

@@ -2,6 +2,8 @@ name: CI
 
 # Every push to main: checks the code, runs the tests, builds Android and iOS,
 # and publishes an installable test APK on the "test-build" release.
+# Store screenshots in all languages are a download on each run's page; copy them
+# to docs/store-screenshots when they should be kept (see docs/RELEASE.md).
 
 on:
   push:
@@ -35,17 +37,11 @@ jobs:
           channel: stable
           cache: true
       - name: Get packages
-        run: flutter pub get 2>&1 | tee -a ci-log.txt
+        run: flutter pub get
       - name: Analyze
-        run: flutter analyze --no-fatal-infos 2>&1 | tee -a ci-log.txt
+        run: flutter analyze --no-fatal-infos
       - name: Test
-        run: flutter test 2>&1 | tee -a ci-log.txt
-      - name: Save log
-        if: always() && github.event_name != 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JOB_STATUS: ${{ job.status }}
-        run: bash tool/push_log.sh ci-logs-test ci-log.txt
+        run: flutter test
 
   screenshots:
     name: Store screenshots
@@ -59,19 +55,13 @@ jobs:
           channel: stable
           cache: true
       - name: Get packages
-        run: flutter pub get 2>&1 | tee -a ci-log.txt
+        run: flutter pub get
       - name: Render screenshots in all languages
-        run: flutter test --update-goldens tool/screenshots 2>&1 | tee -a ci-log.txt
+        run: flutter test --update-goldens tool/screenshots
       - uses: actions/upload-artifact@v6
         with:
           name: store-screenshots-${{ github.run_number }}
           path: tool/screenshots/out
-      - name: Save screenshots and log
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JOB_STATUS: ${{ job.status }}
-        run: bash tool/push_log.sh store-screenshots tool/screenshots/out ci-log.txt
 
   android:
     name: Android build
@@ -95,15 +85,15 @@ jobs:
           cache: true
       - name: Get packages
         if: steps.ready.outputs.ok == 'true'
-        run: flutter pub get 2>&1 | tee -a ci-log.txt
+        run: flutter pub get
       - name: Build test APK (with test tools in Settings)
         if: steps.ready.outputs.ok == 'true'
         run: |
-          flutter build apk --release --dart-define=OM_TESTING=true --build-number=${{ github.run_number }} 2>&1 | tee -a ci-log.txt
+          flutter build apk --release --dart-define=OM_TESTING=true --build-number=${{ github.run_number }}
           cp build/app/outputs/flutter-apk/app-release.apk open-maternity-test.apk
       - name: Build Play Store bundle
         if: steps.ready.outputs.ok == 'true'
-        run: flutter build appbundle --release --build-number=${{ github.run_number }} 2>&1 | tee -a ci-log.txt
+        run: flutter build appbundle --release --build-number=${{ github.run_number }}
       - uses: actions/upload-artifact@v6
         if: steps.ready.outputs.ok == 'true'
         with:
@@ -122,12 +112,6 @@ jobs:
             --target "${GITHUB_SHA}" \
             --title "Test build ${GITHUB_RUN_NUMBER}" \
             --notes "Android test build from ${GITHUB_SHA::7}. Download open-maternity-test.apk on your Android phone and open it to install (allow installing from this source when asked). Settings has an extra 'For testing' section with sample data. Not for the store."
-      - name: Save log
-        if: always() && github.event_name != 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JOB_STATUS: ${{ job.status }}
-        run: bash tool/push_log.sh ci-logs-android ci-log.txt
 
   ios:
     name: iOS build
@@ -146,21 +130,15 @@ jobs:
           cache: true
       - name: Get packages
         if: steps.ready.outputs.ok == 'true'
-        run: flutter pub get 2>&1 | tee -a ci-log.txt
+        run: flutter pub get
       - name: Build iOS app (not signed)
         if: steps.ready.outputs.ok == 'true'
         run: |
-          xcodebuild -version | tee -a ci-log.txt
-          flutter build ios --release --no-codesign --build-number=${{ github.run_number }} 2>&1 | tee -a ci-log.txt
+          xcodebuild -version
+          flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
           cd build/ios/iphoneos && zip -qr ../../../open-maternity-ios-unsigned.zip Runner.app
       - uses: actions/upload-artifact@v6
         if: steps.ready.outputs.ok == 'true'
         with:
           name: ios-unsigned-${{ github.run_number }}
           path: open-maternity-ios-unsigned.zip
-      - name: Save log
-        if: always() && github.event_name != 'pull_request'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JOB_STATUS: ${{ job.status }}
-        run: bash tool/push_log.sh ci-logs-ios ci-log.txt

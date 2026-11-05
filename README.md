@@ -27,7 +27,7 @@ A free, calm toolkit for pregnancy: contraction timer, movement counter, hospita
   </tr>
 </table>
 
-The app also has a dark theme and a dimmed night theme for the timer screens. The images come from the store screenshots that CI makes on every push (see `tool/readme_images.py`).
+The app also has a dark theme and a dimmed night theme for the timer screens. The images are made from the store screenshots in `docs/store-screenshots` (all four languages) with `tool/readme_images.py`.
 
 ## Try it
 

@@ -1,7 +1,7 @@
 """Makes the README screenshots in docs/images from the store screenshots.
 
-  flutter test --update-goldens tool/screenshots   # or take them from CI
   python3 tool/readme_images.py                    # needs Pillow
+  python3 tool/readme_images.py tool/screenshots/out/play   # from fresh ones
 
 Each image is a Google Play screenshot at half size with rounded corners and a
 thin edge, so it reads well on GitHub's light and dark pages.
@@ -12,7 +12,7 @@ import sys
 from PIL import Image, ImageDraw
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SOURCE = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'tool' / 'screenshots' / 'out' / 'play'
+SOURCE = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'docs' / 'store-screenshots' / 'play'
 OUT = ROOT / 'docs' / 'images'
 
 # (language, screenshot, file name in docs/images)

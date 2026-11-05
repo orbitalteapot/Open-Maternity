@@ -20,9 +20,9 @@ Everything builds in GitHub Actions, so you don't need a Mac. Store builds start
 | Play Store icon (512 × 512) | `tool/icons/store/play-icon-512.png` |
 | Play Store feature graphic (1024 × 500) | `tool/icons/store/play-feature-1024x500.png` |
 | App Store icon (1024 × 1024) | built into the app (`ios/Runner/Assets.xcassets/AppIcon.appiconset`) |
-| Screenshots, all four languages | made by CI on every push to `main`: the `store-screenshots` branch, or the run's *store-screenshots* download. `play/` is 1080 × 2160, `appstore/` is 1290 × 2796 (6.9-inch iPhone) |
+| Screenshots, all four languages | `docs/store-screenshots/`: `play/` is 1080 × 2160, `appstore/` is 1290 × 2796 (6.9-inch iPhone). CI makes new ones on every push to `main` (the *store-screenshots* download on the run's page) |
 
-To make the screenshots on your own computer: `flutter test --update-goldens tool/screenshots`.
+To make the screenshots on your own computer: `flutter test --update-goldens tool/screenshots` (they land in `tool/screenshots/out`). After changing the app's look, copy the new ones into `docs/store-screenshots` and run `python3 tool/readme_images.py` to update the README images.
 
 ## Version numbers
 
